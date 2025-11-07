@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Deployment Service Log Viewer</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 16px; }
+    input, select, button { margin-right: 8px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { background:#f4f4f4; cursor: pointer }
+    tr:nth-child(even){background:#f9f9f9}
+    #filter { width: 50%; }
+    pre { white-space: pre-wrap; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <h2>Deployment Service Log Viewer</h2>
+  <div>
+    <label>API Key:</label>
+    <input id="apiKey" placeholder="Enter API key" />
+    <button id="saveKey">Save</button>
+  </div>
+  <div style="margin-top:12px">
+    <label>Filter (simple query):</label>
+    <input id="filter" placeholder="Level==error;payload.Message contains upload" />
+    <label>Sort:</label>
+    <input id="sort" placeholder="datestamp:desc" />
+    <label>Limit:</label>
+    <input id="limit" type="number" style="width:70px" />
+    <button id="apply">Apply</button>
+    <button id="refresh">Refresh</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

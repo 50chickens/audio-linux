@@ -1,0 +1,51 @@
+**/.vs/**
+
+# Visual Studio
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+**bin/
+**/obj/
+**/publish/
+**/externals/
+# VSCode
+.vscode/
+DesignTimeBuild
+
+# VSCode extensions and workspace settings
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# VSCode extension folders
+.vscode-test/
+.vscode-remote/
+
+# Visual Studio specific folders
+.vs/
+*.dbmdl
+*.pdb
+*.cache
+*.log
+*.vspscc
+*.vssscc
+*.ncb
+*.sdf
+*.opensdf
+*.suo
+*.sln.docstates
+*.pidb
+*.svclog
+*.scc
+*.psess
+*.vsp
+*.vsix
+*.docstates
+*.db
+*.opendb
+*.VC.db
+*.VC.opendb
+*.trx
