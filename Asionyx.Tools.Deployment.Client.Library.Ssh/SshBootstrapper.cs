@@ -17,12 +17,13 @@ namespace Asionyx.Tools.Deployment.Client.Library.Ssh
         {
         }
 
-        public SshBootstrapper(string host, string user, string keyPath, int port = 22)
+        public SshBootstrapper(string host, string user, string keyPath, int port = 22, bool autoConvertKey = false)
         {
             _host = host;
             _port = port;
             _user = user;
             _keyPath = keyPath;
+            _autoConvertKey = autoConvertKey;
         }
 
         public void UploadFile(string host, int port, string user, string keyPath, string localFile, string remotePath)
@@ -87,8 +88,193 @@ namespace Asionyx.Tools.Deployment.Client.Library.Ssh
         public (int ExitCode, string Output, string Error) RunCommand(string host, int port, string user, string keyPath, string command)
         {
             var pkey = LoadPrivateKeyFile(keyPath);
-            using var ssh = new SshClient(host, port, user, pkey);
-            ssh.Connect();
+
+            // Build a ConnectionInfo with the private key auth method so we can
+            // attempt to configure algorithm lists (KEX / host key) to match
+            // the real SSH server's advertised algorithms (see user's ssh -vvv output).
+            // We try to add curve25519 and ssh-ed25519 algorithm implementations
+            // reflectively if the loaded SSH.NET assembly exposes matching types.
+            Renci.SshNet.ConnectionInfo conn;
+            var keyAuth = new Renci.SshNet.PrivateKeyAuthenticationMethod(user, pkey);
+            try
+            {
+                conn = new Renci.SshNet.ConnectionInfo(host, port, user, keyAuth);
+
+                try
+                {
+                    var asm = typeof(Renci.SshNet.ConnectionInfo).Assembly;
+                    Type? FindType(string token)
+                    {
+                        foreach (var t in asm.GetTypes())
+                        {
+                            if (t.Name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0) return t;
+                        }
+                        return null;
+                    }
+
+                    // Add KEX algorithms if the ConnectionInfo exposes the dictionary
+                    var kexProp = conn.GetType().GetProperty("KeyExchangeAlgorithms");
+                    if (kexProp != null)
+                    {
+                        if (kexProp.GetValue(conn) is System.Collections.IDictionary kexDict)
+                        {
+                            var curveType = FindType("curve25519");
+                            if (curveType != null && !kexDict.Contains("curve25519-sha256"))
+                            {
+                                kexDict["curve25519-sha256"] = curveType;
+                            }
+                            if (curveType != null && !kexDict.Contains("curve25519-sha256@libssh.org"))
+                            {
+                                kexDict["curve25519-sha256@libssh.org"] = curveType;
+                            }
+                            // Try to add ECDH (nistp) KEX entries if SSH.NET exposes an implementation
+                            var ecdhType = FindType("ecdh");
+                            if (ecdhType != null)
+                            {
+                                if (!kexDict.Contains("ecdh-sha2-nistp256")) kexDict["ecdh-sha2-nistp256"] = ecdhType;
+                                if (!kexDict.Contains("ecdh-sha2-nistp384")) kexDict["ecdh-sha2-nistp384"] = ecdhType;
+                                if (!kexDict.Contains("ecdh-sha2-nistp521")) kexDict["ecdh-sha2-nistp521"] = ecdhType;
+                            }
+                        }
+                    }
+
+                    // Add host key algorithm for ed25519 if present
+                    var hostProp = conn.GetType().GetProperty("HostKeyAlgorithms");
+                    if (hostProp != null)
+                    {
+                        if (hostProp.GetValue(conn) is System.Collections.IDictionary hostDict)
+                        {
+                            var edType = FindType("ed25519");
+                            if (edType != null && !hostDict.Contains("ssh-ed25519"))
+                            {
+                                hostDict["ssh-ed25519"] = edType;
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // Best-effort only — if reflection/augmentation fails, continue with defaults.
+                }
+            }
+            catch
+            {
+                // Fall back to the simple constructor if anything unexpected happens
+                conn = new Renci.SshNet.ConnectionInfo(host, port, user, keyAuth);
+            }
+
+            using var ssh = new Renci.SshNet.SshClient(conn);
+            try
+            {
+                ssh.Connect();
+            }
+            catch (Renci.SshNet.Common.SshConnectionException ex)
+            {
+                // Augment the error with the full exception (stack trace) and any algorithm dictionaries
+                try
+                {
+                    var sb = new System.Text.StringBuilder();
+
+                    // Include full exception.ToString() so the stack trace is visible inline
+                    sb.AppendLine("SSH connection failed: ");
+                    sb.AppendLine(ex.ToString());
+                    sb.AppendLine();
+
+                    var t = conn.GetType();
+
+                    // Inspect all properties on ConnectionInfo and print any IDictionary contents we find
+                    foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                    {
+                        try
+                        {
+                            var val = prop.GetValue(conn);
+                            if (val is System.Collections.IDictionary dict)
+                            {
+                                sb.AppendLine(prop.Name + ":");
+                                foreach (var key in dict.Keys)
+                                {
+                                    var v = dict[key];
+                                    string vdesc = v?.GetType().Name ?? "null";
+                                    sb.AppendLine("  " + key + " -> " + vdesc);
+                                }
+                                sb.AppendLine();
+                            }
+                        }
+                        catch
+                        {
+                            // ignore per-property reflection errors — best-effort diagnostics only
+                        }
+                    }
+
+                    // Also include a short summary of local connection info fields
+                    try
+                    {
+                        sb.AppendLine($"Host: {conn.Host}");
+                        sb.AppendLine($"Port: {conn.Port}");
+                        sb.AppendLine($"Username: {conn.Username}");
+                    }
+                    catch
+                    {
+                    }
+
+                    throw new InvalidOperationException(sb.ToString(), ex);
+                }
+                catch
+                {
+                    // If anything goes wrong while building diagnostics, fall back to original exception
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                // Catch-all: provide the same rich diagnostics for any other exception raised during connect
+                try
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.AppendLine("SSH connection attempt threw an exception:");
+                    sb.AppendLine(ex.ToString());
+                    sb.AppendLine();
+
+                    var t = conn.GetType();
+                    foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                    {
+                        try
+                        {
+                            var val = prop.GetValue(conn);
+                            if (val is System.Collections.IDictionary dict)
+                            {
+                                sb.AppendLine(prop.Name + ":");
+                                foreach (var key in dict.Keys)
+                                {
+                                    var v = dict[key];
+                                    string vdesc = v?.GetType().Name ?? "null";
+                                    sb.AppendLine("  " + key + " -> " + vdesc);
+                                }
+                                sb.AppendLine();
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    try
+                    {
+                        sb.AppendLine($"Host: {conn.Host}");
+                        sb.AppendLine($"Port: {conn.Port}");
+                        sb.AppendLine($"Username: {conn.Username}");
+                    }
+                    catch
+                    {
+                    }
+
+                    throw new InvalidOperationException(sb.ToString(), ex);
+                }
+                catch
+                {
+                    throw;
+                }
+            }
             var cmd = ssh.RunCommand(command);
             ssh.Disconnect();
 

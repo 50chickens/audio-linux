@@ -14,10 +14,11 @@
     <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
   <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
   <PackageReference Include="Renci.SshNet" Version="1.0.0" />
-  </ItemGroup>
-
   <ItemGroup>
-  <!-- Reference the Asionyx SSH tooling -->
+  <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+  <!-- Use local SSH.NET project during experimentation -->
+  <ProjectReference Include="C:\\git\\experimentation\\SSH.NET\\src\\Renci.SshNet\\Renci.SshNet.csproj" />
+  </ItemGroup>
   <ProjectReference Include="..\..\tools\Asionyx.Tools.Deployment.Client.Ssh\Asionyx.Tools.Deployment.Client.Ssh.csproj" />
     <!-- Reference Testcontainers core and the Sshd extension project in the repo -->
     <ProjectReference Include="c:\\git\\experimentation\\testcontainers-dotnet\\src\\Testcontainers\\Testcontainers.csproj" />
