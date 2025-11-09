@@ -13,14 +13,14 @@ public class SoundFlowRouterTests
         var logger = Substitute.For<ILogger<SoundFlowAudioRouter>>();
         var router = new SoundFlowAudioRouter(logger);
 
-        Assert.IsFalse(router.IsRouting);
+    Assert.That(router.IsRouting, Is.False);
 
-        var started = router.StartRoute(new RouteRequest("in", "out"));
-        Assert.IsTrue(started);
-        Assert.IsTrue(router.IsRouting);
+    var started = router.StartRoute(new RouteRequest("in", "out"));
+    Assert.That(started, Is.True);
+    Assert.That(router.IsRouting, Is.True);
 
-        var stopped = router.StopRoute();
-        Assert.IsTrue(stopped);
-        Assert.IsFalse(router.IsRouting);
+    var stopped = router.StopRoute();
+    Assert.That(stopped, Is.True);
+    Assert.That(router.IsRouting, Is.False);
     }
 }

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Asionyx.Tools.Deployment.Client.Ssh</RootNamespace>
+    <AssemblyName>Asionyx.Tools.Deployment.Client.Ssh</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+    <PackageReference Include="Renci.SshNet" Version="1.0.0" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Asionyx.Tools.Deployment.Client.Library.Ssh\Asionyx.Tools.Deployment.Client.Library.Ssh.csproj" />
+  </ItemGroup>
+
+  <!-- Use SDK implicit compile items; no explicit <Compile> entries needed -->
+
+</Project>

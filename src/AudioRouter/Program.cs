@@ -18,12 +18,12 @@ var builder = Host.CreateDefaultBuilder(args)
 // Configure NLog programmatically to emit JSON log entries (match deployment service shape)
 var nlogConfig = new NLog.Config.LoggingConfiguration();
 
-var jsonLayout = new JsonLayout { IncludeAllProperties = false };
+var jsonLayout = new JsonLayout { IncludeEventProperties = false };
 jsonLayout.Attributes.Add(new JsonAttribute("datestamp", "${longdate}"));
 jsonLayout.Attributes.Add(new JsonAttribute("Level", "${level:lowercase=true}"));
 jsonLayout.Attributes.Add(new JsonAttribute("E", "${logger}"));
 
-var payloadLayout = new JsonLayout { IncludeAllProperties = false };
+var payloadLayout = new JsonLayout { IncludeEventProperties = false };
 payloadLayout.Attributes.Add(new JsonAttribute("Message", "${message}"));
 jsonLayout.Attributes.Add(new JsonAttribute("payload", payloadLayout));
 
@@ -35,7 +35,6 @@ var logFile = new FileTarget("logfile")
 {
     FileName = "logs/audio-activities-${date:format=dddd}.log",
     Layout = jsonLayout,
-    ConcurrentWrites = true,
     KeepFileOpen = false
 };
 

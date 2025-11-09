@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="NUnit" Version="4.2.2" />
+    <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+  <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+  <PackageReference Include="Renci.SshNet" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+  <!-- Reference the Asionyx SSH tooling -->
+  <ProjectReference Include="..\..\tools\Asionyx.Tools.Deployment.Client.Ssh\Asionyx.Tools.Deployment.Client.Ssh.csproj" />
+    <!-- Reference Testcontainers core and the Sshd extension project in the repo -->
+    <ProjectReference Include="c:\\git\\experimentation\\testcontainers-dotnet\\src\\Testcontainers\\Testcontainers.csproj" />
+    <ProjectReference Include="..\..\src\TestContainers.Sshd\Testcontainers.Sshd.csproj" />
+  </ItemGroup>
+
+</Project>

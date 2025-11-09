@@ -1,48 +1,41 @@
 using System.Text;
-using Assert = NUnit.Framework.Assert;
-using Org.BouncyCastle.Crypto.Generators;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.OpenSsl;
-using Org.BouncyCastle.Security;
 using Testcontainers.Sshd;
-using Renci.SshNet;
-public class SshdContainerTest
+namespace DotNet.Testcontainers.Tests.Integration.Sshd;
+public static class SshdContainerTest
 {
     [Test]
-    [TestCase("tcuser")]
-    public async Task Sshd_WithPrivateKeyFromEnv_AllowsKeyAuth(string username)
+    public static async Task Sshd_WithPrivateKeyFromEnv_AllowsKeyAuth()
     {
 
         // Generate RSA keypair
-        var keyGen = new RsaKeyPairGenerator();
-        keyGen.Init(new KeyGenerationParameters(new SecureRandom(), 2048));
+        var keyGen = new Org.BouncyCastle.Crypto.Generators.RsaKeyPairGenerator();
+        keyGen.Init(new Org.BouncyCastle.Crypto.KeyGenerationParameters(new Org.BouncyCastle.Security.SecureRandom(), 2048));
         var keyPair = keyGen.GenerateKeyPair();
 
         string privatePem;
         using (var sw = new StringWriter())
         {
-            var pw = new PemWriter(sw);
+            var pw = new Org.BouncyCastle.OpenSsl.PemWriter(sw);
             pw.WriteObject(keyPair.Private);
             pw.Writer.Flush();
             privatePem = sw.ToString();
         }
 
-        string containerPrivateKeyPath = $"/home/{username}/.ssh/id_rsa";
-        string containerPublicKeyPath = $"/home/{username}/.ssh/authorized_keys";
+        var username = "tcuser";
+
         await using var container = new SshdBuilder()
             .WithUsername(username)
-            .WithPrivateKey(privatePem, containerPrivateKeyPath, containerPublicKeyPath)
+            .WithPrivateKey(privatePem, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys")
             .Build();
 
-        await container.StartAsync();
+    await container.StartAsync(CancellationToken.None);
         var host = container.Hostname;
-        var sshPort = container.GetMappedPublicPort(SshdBuilder.SshdPort);
+    var sshPort = container.GetMappedPublicPort(SshdBuilder.SshdPort);
 
             using (var ms = new MemoryStream(Encoding.ASCII.GetBytes(privatePem)))
             {
-                var pk = new PrivateKeyFile(ms);
-                using var client = new SshClient(host, (int)sshPort, username, pk);
-
+                var pk = new Renci.SshNet.PrivateKeyFile(ms);
+                using var client = new Renci.SshNet.SshClient(host, (int)sshPort, username, pk);
                 client.Connect();
                 Assert.That(client.IsConnected, Is.True);
 
@@ -56,32 +49,31 @@ public class SshdContainerTest
     }
 
     [Test]
-    [TestCase("tcuser")]
-    public async Task Sshd_Scp_UploadFileAndVerifyContents(string username)
+    public static async Task Sshd_Scp_UploadFileAndVerifyContents()
     {
 
         // Generate RSA keypair
-        var keyGen = new RsaKeyPairGenerator();
-        keyGen.Init(new KeyGenerationParameters(new SecureRandom(), 2048));
+        var keyGen = new Org.BouncyCastle.Crypto.Generators.RsaKeyPairGenerator();
+        keyGen.Init(new Org.BouncyCastle.Crypto.KeyGenerationParameters(new Org.BouncyCastle.Security.SecureRandom(), 2048));
         var keyPair = keyGen.GenerateKeyPair();
 
         string privatePem;
         using (var sw = new StringWriter())
         {
-            var pw = new PemWriter(sw);
+            var pw = new Org.BouncyCastle.OpenSsl.PemWriter(sw);
             pw.WriteObject(keyPair.Private);
             pw.Writer.Flush();
             privatePem = sw.ToString();
         }
 
-        string containerPublicKeyPath = $"/home/{username}/.ssh/authorized_keys";
-        string containerPrivateKeyPath = $"/home/{username}/.ssh/id_rsa";
+        var username = "tcuser";
+
         await using var container = new SshdBuilder()
             .WithUsername(username)
-            .WithPrivateKey(privatePem, containerPrivateKeyPath, containerPublicKeyPath)
+            .WithPrivateKey(privatePem, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys")
             .Build();
 
-        await container.StartAsync();
+    await container.StartAsync(CancellationToken.None);
 
         var host = container.Hostname;
     var sshPort = container.GetMappedPublicPort(SshdBuilder.SshdPort);
@@ -90,10 +82,10 @@ public class SshdContainerTest
             var content = "hello-scp";
             using (var msKey = new MemoryStream(Encoding.ASCII.GetBytes(privatePem)))
             {
-                var pk = new PrivateKeyFile(msKey);
-                var keyAuth = new PrivateKeyAuthenticationMethod(username, pk);
-                var conn = new ConnectionInfo(host, (int)sshPort, username, keyAuth);
-                using var scp = new ScpClient(conn);
+                var pk = new Renci.SshNet.PrivateKeyFile(msKey);
+                var keyAuth = new Renci.SshNet.PrivateKeyAuthenticationMethod(username, pk);
+                var conn = new Renci.SshNet.ConnectionInfo(host, (int)sshPort, username, keyAuth);
+                using var scp = new Renci.SshNet.ScpClient(conn);
                 scp.Connect();
                 Assert.That(scp.IsConnected, Is.True);
 
@@ -109,10 +101,10 @@ public class SshdContainerTest
             // Verify the uploaded file contents using an SSH command
             using (var ms = new MemoryStream(Encoding.ASCII.GetBytes(privatePem)))
             {
-                var pk = new PrivateKeyFile(ms);
-                var keyAuth = new PrivateKeyAuthenticationMethod(username, pk);
-                var conn = new ConnectionInfo(host, (int)sshPort, username, keyAuth);
-                using var client = new SshClient(conn);
+                var pk = new Renci.SshNet.PrivateKeyFile(ms);
+                var keyAuth = new Renci.SshNet.PrivateKeyAuthenticationMethod(username, pk);
+                var conn = new Renci.SshNet.ConnectionInfo(host, (int)sshPort, username, keyAuth);
+                using var client = new Renci.SshNet.SshClient(conn);
                 client.Connect();
                 Assert.That(client.IsConnected, Is.True);
 
@@ -126,18 +118,17 @@ public class SshdContainerTest
     }
 
     [Test]
-    [TestCase("tcuser")]
-    public async Task Sshd_PrivateKeyFileCopied_AllowsKeyAuth(string username)
+    public static async Task Sshd_PrivateKeyFileCopied_AllowsKeyAuth()
     {
         // Generate RSA keypair
-        var keyGen = new RsaKeyPairGenerator();
-        keyGen.Init(new KeyGenerationParameters(new SecureRandom(), 2048));
+        var keyGen = new Org.BouncyCastle.Crypto.Generators.RsaKeyPairGenerator();
+        keyGen.Init(new Org.BouncyCastle.Crypto.KeyGenerationParameters(new Org.BouncyCastle.Security.SecureRandom(), 2048));
         var keyPair = keyGen.GenerateKeyPair();
 
         string privatePem;
         using (var sw = new StringWriter())
         {
-            var pw = new PemWriter(sw);
+            var pw = new Org.BouncyCastle.OpenSsl.PemWriter(sw);
             pw.WriteObject(keyPair.Private);
             pw.Writer.Flush();
             privatePem = sw.ToString();
@@ -149,26 +140,24 @@ public class SshdContainerTest
 
         try
         {
-         
-            string containerPublicKeyPath = $"/home/{username}/.ssh/authorized_keys";
-            string containerPrivateKeyPath = $"/home/{username}/.ssh/id_rsa";
+            var username = "tcuser";
+
             await using var container = new SshdBuilder()
                 .WithUsername(username)
-                .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath, containerPublicKeyPath)
+                .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys")
                 .Build();
 
-            await container.StartAsync();
+            await container.StartAsync(CancellationToken.None);
 
             var host = container.Hostname;
             var sshPort = container.GetMappedPublicPort(SshdBuilder.SshdPort);
 
             // Use the host key file as the client key as well
             using var fs = File.OpenRead(hostKeyPath);
-            var pk = new PrivateKeyFile(fs);
-            var keyAuth = new PrivateKeyAuthenticationMethod(username, pk);
-            var conn = new ConnectionInfo(host, (int)sshPort, username, keyAuth);
-            using var client = new SshClient(conn);
-
+            var pk = new Renci.SshNet.PrivateKeyFile(fs);
+            var keyAuth = new Renci.SshNet.PrivateKeyAuthenticationMethod(username, pk);
+            var conn = new Renci.SshNet.ConnectionInfo(host, (int)sshPort, username, keyAuth);
+            using var client = new Renci.SshNet.SshClient(conn);
             client.Connect();
             Assert.That(client.IsConnected, Is.True);
 

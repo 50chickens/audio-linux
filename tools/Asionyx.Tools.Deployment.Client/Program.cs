@@ -1,10 +1,7 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
-using System.Net.Http.Headers;
+
 using System.Net.Http.Json;
-using System.Text;
-using System.Diagnostics;
-using Asionyx.Tools.Deployment.Ssh;
 
 var urlOption = new Option<string>("--deploy-url", () => "http://pistomp:5001", "Deployment service base URL");
 var keyOption = new Option<string>("--key", () => "changeme", "API key");
@@ -12,16 +9,7 @@ var targetUrlOption = new Option<string>("--target-url", () => "http://pistomp:5
 
 var root = new RootCommand("Asionyx Deployment Client") { urlOption, keyOption, targetUrlOption };
 
-// SSH options (for bootstrapping the deployment service via SSH/SFTP)
-var sshHostOption = new Option<string>("--ssh-host", () => "pistomp", "SSH host for remote machine");
-var sshPortOption = new Option<int>("--ssh-port", () => 22, "SSH port");
-var sshUserOption = new Option<string>("--ssh-user", () => "pistomp", "SSH username");
-var sshKeyOption = new Option<string>("--ssh-key", () => string.Empty, "Path to private key file for SSH authentication");
 var publishDirOption = new Option<string>("--publish-dir", () => "publish/deployment-service", "Local folder containing published deployment service to upload");
-root.AddOption(sshHostOption);
-root.AddOption(sshPortOption);
-root.AddOption(sshUserOption);
-root.AddOption(sshKeyOption);
 root.AddOption(publishDirOption);
 
 // stop command
@@ -101,37 +89,6 @@ info.SetHandler(async (InvocationContext ctx) =>
         Console.WriteLine("Failed to call /info: " + ex.Message);
     }
 });
-
-root.AddCommand(stop);
-root.AddCommand(start);
-root.AddCommand(deploy);
-root.AddCommand(info);
-// SSH bootstrap command: upload and install the deployment service using SSH/SFTP and systemctl
-var sshBootstrap = new Command("ssh-bootstrap", "Upload and install Asionyx.Tools.Deployment on remote host via SSH/SFTP and systemctl") {
-    sshHostOption, sshPortOption, sshUserOption, sshKeyOption, publishDirOption
-};
-sshBootstrap.SetHandler((InvocationContext ctx) =>
-{
-    var host = ctx.ParseResult.GetValueForOption(sshHostOption)!;
-    var port = ctx.ParseResult.GetValueForOption(sshPortOption);
-    var user = ctx.ParseResult.GetValueForOption(sshUserOption)!;
-    var keyPath = ctx.ParseResult.GetValueForOption(sshKeyOption)!;
-    var publishDir = ctx.ParseResult.GetValueForOption(publishDirOption)!;
-
-    try
-    {
-        SshBootstrapAndInstall(host, port, user, keyPath, publishDir);
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine("SSH bootstrap failed: " + ex.Message);
-        Environment.ExitCode = 2;
-    }
-});
-root.AddCommand(sshBootstrap);
-
-await root.InvokeAsync(args);
-
 static async Task PostServiceAction(string deployUrl, string apiKey, string name, string command)
 {
     using var http = new HttpClient { BaseAddress = new Uri(deployUrl) };
@@ -140,44 +97,3 @@ static async Task PostServiceAction(string deployUrl, string apiKey, string name
     var resp = await http.PostAsJsonAsync("/api/services/action", payload);
     Console.WriteLine($"Service action {command} returned {resp.StatusCode}");
 }
-
-static void SshBootstrapAndInstall(string host, int port, string user, string keyPath, string publishDir)
-{
-    if (!System.IO.Directory.Exists(publishDir)) throw new ArgumentException($"Publish directory not found: {publishDir}");
-
-    // Upload into the remote user's home directory to avoid ~ expansion issues
-    var remoteTempDir = $"/home/{user}/deployment-service";
-    var unitLocal = System.IO.Path.Combine("deploy", "deployment-service.service");
-
-    var sb = new SshBootstrapper();
-    try
-    {
-        Console.WriteLine("Uploading publish folder via managed SCP...");
-    sb.UploadDirectory(host, port, user, keyPath, publishDir, remoteTempDir);
-
-        if (System.IO.File.Exists(unitLocal))
-        {
-            Console.WriteLine("Uploading unit file to /tmp on remote host...");
-            sb.UploadFile(host, port, user, keyPath, unitLocal, "/tmp/deployment-service.service");
-        }
-
-        Console.WriteLine("Running remote install commands...");
-        var cmd = $"sudo mkdir -p /opt/deployment-service && sudo rm -rf /opt/deployment-service/* && sudo mv {remoteTempDir}/* /opt/deployment-service && sudo mv /tmp/deployment-service.service /etc/systemd/system/deployment-service.service && sudo systemctl daemon-reload && sudo systemctl enable --now deployment-service";
-    var result = sb.RunCommand(host, port, user, keyPath, cmd);
-        if (result.ExitCode != 0)
-        {
-            Console.Error.WriteLine("Remote install command failed: " + result.Error);
-            throw new Exception("Remote install failed");
-        }
-        Console.WriteLine(result.Output);
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine("SSH bootstrap failed: " + ex.Message);
-        throw;
-    }
-}
-
-// known_hosts editing is no longer required because we use a managed SSH library (Renci.SshNet)
-
-// No external process invocation for scp/ssh anymore.

@@ -16,8 +16,8 @@ public class RouterServiceTests
 
     var result = router.StartRoute(new RouteRequest("input1", "output1"));
 
-        Assert.IsTrue(result);
-        Assert.IsTrue(router.IsRouting);
+    Assert.That(result, Is.True);
+    Assert.That(router.IsRouting, Is.True);
     }
 
     [Test]
@@ -29,7 +29,7 @@ public class RouterServiceTests
 
         var result = router.StopRoute();
 
-        Assert.IsTrue(result);
-        Assert.IsFalse(router.IsRouting);
+    Assert.That(result, Is.True);
+    Assert.That(router.IsRouting, Is.False);
     }
 }

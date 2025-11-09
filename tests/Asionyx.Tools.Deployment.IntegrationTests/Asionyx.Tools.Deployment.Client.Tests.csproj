@@ -13,7 +13,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\AudioRouter\AudioRouter.csproj" />
+    <ProjectReference Include="..\..\src\Asionyx.Tools.Deployment\Asionyx.Tools.Deployment.csproj" />
   </ItemGroup>
 
 </Project>

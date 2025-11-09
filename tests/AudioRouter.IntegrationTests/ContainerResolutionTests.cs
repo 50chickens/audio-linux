@@ -18,7 +18,7 @@ public class ContainerResolutionTests
         using var scope = sp.CreateScope();
         var provider = scope.ServiceProvider;
 
-        var router = provider.GetService(typeof(IAudioRouter));
-        Assert.IsNotNull(router, "IAudioRouter should be registered in the DI container");
+    var router = provider.GetService(typeof(IAudioRouter));
+    Assert.That(router, Is.Not.Null, "IAudioRouter should be registered in the DI container");
     }
 }

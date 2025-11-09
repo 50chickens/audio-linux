@@ -26,12 +26,12 @@ builder.WebHost.UseUrls("http://*:5001");
 // { "datestamp": "...", "Level": "info", "E": "Namespace.Class", "payload": { "Message": "..." } }
 var nlogConfig = new NLog.Config.LoggingConfiguration();
 
-var jsonLayout = new JsonLayout { IncludeAllProperties = false };
+var jsonLayout = new JsonLayout { IncludeEventProperties = false };
 jsonLayout.Attributes.Add(new JsonAttribute("datestamp", "${longdate}"));
 jsonLayout.Attributes.Add(new JsonAttribute("Level", "${level:lowercase=true}"));
 jsonLayout.Attributes.Add(new JsonAttribute("E", "${logger}"));
 
-var payloadLayout = new JsonLayout { IncludeAllProperties = false };
+var payloadLayout = new JsonLayout { IncludeEventProperties = false };
 payloadLayout.Attributes.Add(new JsonAttribute("Message", "${message}"));
 jsonLayout.Attributes.Add(new JsonAttribute("payload", payloadLayout));
 
@@ -40,7 +40,6 @@ var logFile = new FileTarget("logfile")
     // Use weekday-only file names so the same file is reused each week (e.g. deployment-Monday.log)
     FileName = "logs/deployment-${date:format=dddd}.log",
     Layout = jsonLayout,
-    ConcurrentWrites = true,
     KeepFileOpen = false
 };
 

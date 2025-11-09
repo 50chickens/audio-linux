@@ -5,11 +5,10 @@
     </PropertyGroup>
     <ItemGroup>
         
-        <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+        
         <PackageReference Include="Docker.DotNet.Enhanced" Version="3.129.0" />
-        <PackageReference Include="JetBrains.Annotations" VersionOverride="2023.3.0" PrivateAssets="All" />
-        <PackageReference Include="Renci.SshNet.Async" Version="1.4.0" />
-		
+        <PackageReference Include="JetBrains.Annotations" VersionOverride="2023.3.0" PrivateAssets="All" Version="2025.2.2" />
+    	
     </ItemGroup>
     <ItemGroup>
       <PackageReference Include="Testcontainers" Version="4.8.1" />

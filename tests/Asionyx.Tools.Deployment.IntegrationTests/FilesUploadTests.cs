@@ -52,11 +52,11 @@ public class FilesUploadTests
 
         var resp = await client.PostAsync("/api/files/upload", content);
         var body = await resp.Content.ReadAsStringAsync();
-        Assert.IsTrue(resp.IsSuccessStatusCode, body);
+    Assert.That(resp.IsSuccessStatusCode, Is.True, body);
 
         // verify saved file exists
         var saved = Path.Combine(targetDir, "data.bin");
-        Assert.IsTrue(File.Exists(saved));
+    Assert.That(File.Exists(saved), Is.True);
     }
 
     [Test]
