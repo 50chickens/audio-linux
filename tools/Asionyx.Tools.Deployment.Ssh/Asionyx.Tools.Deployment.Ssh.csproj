@@ -7,8 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Use local SSH.NET project during experimentation -->
-    <ProjectReference Include="C:\\git\\experimentation\\SSH.NET\\src\\Renci.SshNet\\Renci.SshNet.csproj" />
+    <!-- Use SSH.NET NuGet package -->
+      <PackageReference Include="SSH.NET" Version="2025.1.0" />
   </ItemGroup>
 
 </Project>

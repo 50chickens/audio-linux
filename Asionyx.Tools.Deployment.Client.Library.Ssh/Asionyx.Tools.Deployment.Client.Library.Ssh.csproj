@@ -6,9 +6,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Use local SSH.NET project instead of NuGet package during experimentation -->
-    <ProjectReference Include="C:\\git\\experimentation\\SSH.NET\\src\\Renci.SshNet\\Renci.SshNet.csproj" />
-    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+  <!-- Use SSH.NET NuGet package -->
+  <PackageReference Include="SSH.NET" Version="2025.1.0" />
+  <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
   </ItemGroup>
 	
 
