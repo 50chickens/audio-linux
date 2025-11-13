@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Asionyx.Tools.Deployment.Controllers;
+namespace Asionyx.Service.Deployment.Linux.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]

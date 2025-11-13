@@ -1,8 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
-using Asionyx.Tools.Deployment.Services;
+using Asionyx.Service.Deployment.Linux.Services;
 using System.Diagnostics;
 
-namespace Asionyx.Tools.Deployment.Controllers;
+namespace Asionyx.Service.Deployment.Linux.Controllers;
 
 [ApiController]
 [Route("api/services")]

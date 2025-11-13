@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace Asionyx.Tools.Deployment.Services;
+namespace Asionyx.Service.Deployment.Linux.Services;
 
 public class FileAuditStore : IAuditStore
 {

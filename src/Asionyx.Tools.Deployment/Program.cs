@@ -4,18 +4,88 @@ using NLog.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Read API key from environment variable DEPLOY_API_KEY or from command-line parameter --api-key
-var configuredApiKey = Environment.GetEnvironmentVariable("DEPLOY_API_KEY");
-if (string.IsNullOrWhiteSpace(configuredApiKey))
+// Configuration file load order requirements (explicit):
+// - ServiceSettings.json (optional; don't store values here)
+// - ServiceSettings.local.json (optional)
+// - ServiceSettings.release.json (mandatory)
+// and for appsettings.json:
+// - appsettings.json (optional)
+// - appsettings.local.json (optional)
+// - appsettings.release.json (mandatory)
+// Add those sources in order so later files override earlier ones.
+builder.Configuration.AddJsonFile("ServiceSettings.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddJsonFile("ServiceSettings.local.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddJsonFile("ServiceSettings.release.json", optional: true, reloadOnChange: true);
+
+builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddJsonFile("appsettings.local.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddJsonFile("appsettings.release.json", optional: true, reloadOnChange: true);
+
+// The desired data folder can still be configured under Service:DataFolder in configuration (default: ~/.Asionyx.Service.Deployment.Linux)
+// Read the configured data folder (may include a '~')
+var configuredDataFolder = builder.Configuration["Service:DataFolder"] ?? "~/.Asionyx.Service.Deployment.Linux";
+
+// Expand ~ to the current user's home directory (at runtime this will be the effective user's home; when running under systemd as the service user this will be that user's home)
+static string ExpandTilde(string path)
 {
-    configuredApiKey = builder.Configuration["api-key"];
+    if (string.IsNullOrWhiteSpace(path)) return path ?? string.Empty;
+    if (path.StartsWith("~"))
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return System.IO.Path.Combine(home, path.TrimStart('~').TrimStart('/', '\\'));
+    }
+    return path;
 }
+
+var dataFolderExpanded = ExpandTilde(configuredDataFolder);
+
+// Bind ServiceSettings from configuration
+var serviceSettings = new Asionyx.Service.Deployment.Linux.Models.ServiceSettings();
+builder.Configuration.Bind(serviceSettings);
+// If DataFolder not set in settings (but present under Service:DataFolder), copy it
+if (string.IsNullOrWhiteSpace(serviceSettings.DataFolder))
+{
+    serviceSettings.DataFolder = configuredDataFolder;
+}
+
+// Ensure the expanded data folder path is available for later use
+var dataFolderPath = ExpandTilde(serviceSettings.DataFolder);
+
+// Read API key from ServiceSettings (if present) or legacy appsettings key
+var configuredApiKey = serviceSettings.ApiKey ?? builder.Configuration["api-key"];
 
 if (string.IsNullOrWhiteSpace(configuredApiKey))
 {
-    // Fail fast: require API key to be provided either via DEPLOY_API_KEY env var or --api-key command line
-    Console.Error.WriteLine("ERROR: DEPLOY_API_KEY environment variable or --api-key command line parameter must be provided to run this service.");
-    return;
+    // No API key provided — generate a new one and persist it to ServiceSettings.release.json in the content root.
+    configuredApiKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+    try
+    {
+        var contentRoot = builder.Environment.ContentRootPath ?? System.IO.Directory.GetCurrentDirectory();
+        var releaseSettingsPath = System.IO.Path.Combine(contentRoot, "ServiceSettings.release.json");
+
+        System.Text.Json.Nodes.JsonObject root;
+        if (System.IO.File.Exists(releaseSettingsPath))
+        {
+            var txt = System.IO.File.ReadAllText(releaseSettingsPath);
+            var parsed = System.Text.Json.Nodes.JsonNode.Parse(txt);
+            root = parsed as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
+        }
+        else
+        {
+            root = new System.Text.Json.Nodes.JsonObject();
+        }
+
+        // Set or overwrite the ApiKey value
+        root["ApiKey"] = configuredApiKey;
+
+        var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+        System.IO.File.WriteAllText(releaseSettingsPath, root.ToJsonString(opts));
+        Console.WriteLine($"Generated new API key and wrote to {releaseSettingsPath}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Warning: failed to persist new API key to ServiceSettings.release.json: {ex.Message}");
+    }
 }
 
 // Run deployment service on a dedicated management port to avoid colliding with other apps
@@ -59,13 +129,15 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 // Configuration: API key
-builder.Services.AddSingleton<Asionyx.Tools.Deployment.Services.IAuditStore, Asionyx.Tools.Deployment.Services.FileAuditStore>();
-builder.Services.AddSingleton(new Asionyx.Tools.Deployment.Models.DeploymentOptions { ApiKey = configuredApiKey });
+// Register service settings and deployment options
+builder.Services.AddSingleton(serviceSettings);
+builder.Services.AddSingleton<Asionyx.Service.Deployment.Linux.Services.IAuditStore, Asionyx.Service.Deployment.Linux.Services.FileAuditStore>();
+builder.Services.AddSingleton(new Asionyx.Service.Deployment.Linux.Models.DeploymentOptions { ApiKey = configuredApiKey });
 
 var app = builder.Build();
 
 // API key middleware
-app.UseMiddleware<Asionyx.Tools.Deployment.Middleware.ApiKeyAuthMiddleware>();
+app.UseMiddleware<Asionyx.Service.Deployment.Linux.Middleware.ApiKeyAuthMiddleware>();
 
 // simple health endpoint (no API key required)
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
@@ -81,6 +153,21 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
+
+// Unauthenticated status endpoint
+app.MapGet("/status", () =>
+{
+    // Hostname
+    var hostname = System.Net.Dns.GetHostName();
+    // IP addresses (non-loopback IPv4)
+    var addrs = System.Net.Dns.GetHostEntry(hostname).AddressList
+        .Where(a => a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && !System.Net.IPAddress.IsLoopback(a))
+        .Select(a => a.ToString())
+        .ToArray();
+    // Application version
+    var ver = System.Diagnostics.FileVersionInfo.GetVersionInfo(System.Reflection.Assembly.GetEntryAssembly()?.Location ?? string.Empty).ProductVersion ?? "unknown";
+    return Results.Ok(new { hostname, ipAddresses = addrs, version = ver });
+});
 
 // Redirect root to the logviewer UI
 app.MapGet("/", () => Results.Redirect("/logviewer/index.html"));

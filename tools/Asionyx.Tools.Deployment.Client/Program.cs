@@ -1,15 +1,42 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
-
+using CommandLine;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net.Http.Json;
 
-var urlOption = new Option<string>("--deploy-url", () => "http://pistomp:5001", "Deployment service base URL");
-var keyOption = new Option<string>("--key", () => "changeme", "API key");
-var targetUrlOption = new Option<string>("--target-url", () => "http://pistomp:5000", "Target application base URL (for /info)");
+// Build configuration from appsettings.json and environment
+var config = new ConfigurationBuilder()
+    .SetBasePath(AppContext.BaseDirectory)
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddEnvironmentVariables()
+    .Build();
+
+// Load defaults from appsettings
+var appOpts = config.GetSection("App").Get<AppOptions>() ?? new AppOptions();
+
+// Parse command-line overrides using CommandLineParser
+var parseResult = Parser.Default.ParseArguments<CliOverrides>(args);
+parseResult.WithParsed(ov =>
+{
+    if (!string.IsNullOrEmpty(ov.DeployUrl)) appOpts.DeployUrl = ov.DeployUrl!;
+    if (!string.IsNullOrEmpty(ov.ApiKey)) appOpts.ApiKey = ov.ApiKey!;
+    if (!string.IsNullOrEmpty(ov.TargetUrl)) appOpts.TargetUrl = ov.TargetUrl!;
+    if (!string.IsNullOrEmpty(ov.PublishDir)) appOpts.PublishDir = ov.PublishDir!;
+});
+
+// Register options into DI
+var services = new ServiceCollection();
+services.AddSingleton(appOpts);
+var serviceProvider = services.BuildServiceProvider();
+
+var urlOption = new Option<string>("--deploy-url", description: "Deployment service base URL");
+var keyOption = new Option<string>("--key", description: "API key");
+var targetUrlOption = new Option<string>("--target-url", description: "Target application base URL (for /info)");
 
 var root = new RootCommand("Asionyx Deployment Client") { urlOption, keyOption, targetUrlOption };
 
-var publishDirOption = new Option<string>("--publish-dir", () => "publish/deployment-service", "Local folder containing published deployment service to upload");
+var publishDirOption = new Option<string>("--publish-dir", description: "Local folder containing published deployment service to upload");
 root.AddOption(publishDirOption);
 
 // stop command
@@ -18,8 +45,9 @@ var stop = new Command("stop", "Stop the remote audio-router service")
 };
 stop.SetHandler(async (InvocationContext ctx) =>
 {
-    var deployUrl = ctx.ParseResult.GetValueForOption(urlOption);
-    var key = ctx.ParseResult.GetValueForOption(keyOption);
+    var opts = serviceProvider.GetRequiredService<AppOptions>();
+    var deployUrl = !string.IsNullOrEmpty(ctx.ParseResult.GetValueForOption(urlOption)) ? ctx.ParseResult.GetValueForOption(urlOption) : opts.DeployUrl;
+    var key = !string.IsNullOrEmpty(ctx.ParseResult.GetValueForOption(keyOption)) ? ctx.ParseResult.GetValueForOption(keyOption) : opts.ApiKey;
     await PostServiceAction(deployUrl, key, "audio-router", "stop");
 });
 
@@ -29,21 +57,23 @@ var start = new Command("start", "Start the remote audio-router service")
 };
 start.SetHandler(async (InvocationContext ctx) =>
 {
-    var deployUrl = ctx.ParseResult.GetValueForOption(urlOption);
-    var key = ctx.ParseResult.GetValueForOption(keyOption);
+    var opts = serviceProvider.GetRequiredService<AppOptions>();
+    var deployUrl = !string.IsNullOrEmpty(ctx.ParseResult.GetValueForOption(urlOption)) ? ctx.ParseResult.GetValueForOption(urlOption) : opts.DeployUrl;
+    var key = !string.IsNullOrEmpty(ctx.ParseResult.GetValueForOption(keyOption)) ? ctx.ParseResult.GetValueForOption(keyOption) : opts.ApiKey;
     await PostServiceAction(deployUrl, key, "audio-router", "start");
 });
 
 // deploy command
 var zipOption = new Option<string>("--zip", "Path to publish zip (required)");
-var unitOption = new Option<string>("--unit", () => "deploy/audio-router.service", "Path to systemd unit file to install");
+var unitOption = new Option<string>("--unit", description: "Path to systemd unit file to install");
 var deploy = new Command("deploy", "Upload and install a new audio-router publish zip") { zipOption, unitOption };
 deploy.SetHandler(async (InvocationContext ctx) =>
 {
-    var deployUrl = ctx.ParseResult.GetValueForOption(urlOption)!;
-    var key = ctx.ParseResult.GetValueForOption(keyOption)!;
+    var opts = serviceProvider.GetRequiredService<AppOptions>();
+    var deployUrl = !string.IsNullOrEmpty(ctx.ParseResult.GetValueForOption(urlOption)) ? ctx.ParseResult.GetValueForOption(urlOption) : opts.DeployUrl;
+    var key = !string.IsNullOrEmpty(ctx.ParseResult.GetValueForOption(keyOption)) ? ctx.ParseResult.GetValueForOption(keyOption) : opts.ApiKey;
     var zip = ctx.ParseResult.GetValueForOption(zipOption)!;
-    var unit = ctx.ParseResult.GetValueForOption(unitOption)!;
+    var unit = !string.IsNullOrEmpty(ctx.ParseResult.GetValueForOption(unitOption)) ? ctx.ParseResult.GetValueForOption(unitOption) : opts.UnitFile;
     if (string.IsNullOrEmpty(zip) || !System.IO.File.Exists(zip)) { Console.Error.WriteLine("Zip file required and must exist"); return; }
 
     // Upload zip as multipart/form-data (metadata JSON + file)
@@ -51,7 +81,7 @@ deploy.SetHandler(async (InvocationContext ctx) =>
     http.DefaultRequestHeaders.Add("X-Api-Key", key);
 
     using var content = new MultipartFormDataContent();
-    var meta = new { TargetDir = "/opt/audio-router", FileName = System.IO.Path.GetFileName(zip) };
+    var meta = new { TargetDir = opts.TargetDir, FileName = System.IO.Path.GetFileName(zip) };
     var metaJson = System.Text.Json.JsonSerializer.Serialize(meta);
     content.Add(new StringContent(metaJson), "metadata");
 
@@ -76,7 +106,8 @@ var info = new Command("info", "Call the audio-router /info endpoint to verify p
 };
 info.SetHandler(async (InvocationContext ctx) =>
 {
-    var target = ctx.ParseResult.GetValueForOption(targetUrlOption);
+    var opts = serviceProvider.GetRequiredService<AppOptions>();
+    var target = !string.IsNullOrEmpty(ctx.ParseResult.GetValueForOption(targetUrlOption)) ? ctx.ParseResult.GetValueForOption(targetUrlOption) : opts.TargetUrl;
     try
     {
         using var http = new HttpClient { BaseAddress = new Uri(target) };

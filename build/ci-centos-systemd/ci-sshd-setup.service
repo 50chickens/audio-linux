@@ -1,0 +1,12 @@
+[Unit]
+Description=CI SSHD setup
+After=network.target
+Before=sshd.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ci-sshd-setup.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-namespace Asionyx.Tools.Deployment.Models;
+namespace Asionyx.Service.Deployment.Linux.Models;
 
 public class DeploymentOptions
 {

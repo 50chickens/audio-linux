@@ -1,0 +1,13 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <!-- Publish output under repo root: publish/Asionyx.Service.Deployment.Linux -->
+    <IntegrationPublishDir>$(MSBuildThisFileDirectory)..\publish\Asionyx.Service.Deployment.Linux</IntegrationPublishDir>
+    <ServerProject>$(MSBuildThisFileDirectory)..\src\Asionyx.Service.Deployment.Linux\Asionyx.Service.Deployment.Linux.csproj</ServerProject>
+  </PropertyGroup>
+
+  <Target Name="PublishServerForIntegrationTests">
+    <Message Importance="high" Text="Publishing Asionyx.Service.Deployment.Linux to $(IntegrationPublishDir) for integration tests..." />
+    <MakeDir Directories="$(IntegrationPublishDir)" />
+    <Exec Command="dotnet publish &quot;$(ServerProject)&quot; -c $(Configuration) -o &quot;$(IntegrationPublishDir)&quot;" />
+  </Target>
+</Project>

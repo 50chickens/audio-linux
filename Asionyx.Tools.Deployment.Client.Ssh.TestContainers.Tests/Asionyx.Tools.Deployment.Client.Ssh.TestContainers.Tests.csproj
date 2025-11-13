@@ -24,7 +24,21 @@
   <ItemGroup>
     <ProjectReference Include="..\Asionyx.Tools.Deployment.Client.Library.Ssh\Asionyx.Tools.Deployment.Client.Library.Ssh.csproj" />
     <ProjectReference Include="..\src\TestContainers.Sshd\TestContainers.Sshd.csproj" />
+      <ProjectReference Include="..\tools\Asionyx.Tools.Deployment.Client.Ssh\Asionyx.Tools.Deployment.Client.Ssh.csproj" />
   </ItemGroup>
+
+  <!-- Import reusable Integration publish target (publishes the server project before tests).
+    The implementation lives in build\Integration.Publish.targets so it's reusable and
+    not embedded in the test project file. -->
+  <Import Project="..\build\Integration.Publish.targets" />
+
+  <!-- Minimal wrapper target that ensures the publish target runs before Test. The implementation
+    of PublishServerForIntegrationTests is in the imported targets file. -->
+  <Target Name="EnsureServerPublished" DependsOnTargets="PublishServerForIntegrationTests" BeforeTargets="Test" />
+
+    <ItemGroup>
+      <PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+    </ItemGroup>
 
   <ItemGroup>
     <Using Include="NUnit.Framework" />

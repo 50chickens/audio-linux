@@ -41,7 +41,7 @@ public class HostConnectivityTests
         }
 
         // Attempt a real connection using the SshBootstrapper (which will surface rich diagnostics on failure)
-        var sb = new SshBootstrapper(host, username, keyPath, port, autoConvertKey: false);
+    var sb = new SshBootstrapper(host, username, keyPath, port);
         try
         {
             var (exit, output, error) = sb.RunCommand("echo hello-asionyx-");

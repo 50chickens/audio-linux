@@ -22,8 +22,8 @@ public class RealHostIntegrationTests
             Assert.Ignore($"Private key file not found: {privateKeyPath}");
         }
 
-        // Use private key file (PEM RSA) supplied by the test runner
-        var sb = new SshBootstrapper(host, port, privateKeyPath, port);
+    // Use private key file (PEM RSA) supplied by the test runner
+    var sb = new SshBootstrapper(host, user, privateKeyPath, port);
 
         // Let exceptions bubble so test fails if connection/auth fails.
         var res = sb.RunCommand("echo hello-asionyx-real");
@@ -53,8 +53,8 @@ public class RealHostIntegrationTests
 
         var content = File.ReadAllText(privateKeyPath);
 
-        // Use in-memory private key content (PEM RSA)
-        var sb = new SshBootstrapper(host, port, user, content, true, false);
+    // Use in-memory private key content (PEM RSA)
+    var sb = new SshBootstrapper(host, user, content, true, port);
         var res = sb.RunCommand("echo hello-privkey-content");
 
         Assert.That(res.ExitCode, Is.EqualTo(0), $"Remote command failed: stdout='{res.Output}' stderr='{res.Error}'");
@@ -74,8 +74,8 @@ public class RealHostIntegrationTests
             Assert.Ignore($"PPK file not found: {ppkPath}");
         }
 
-        // Use provided private key file (PEM RSA)
-        var sb = new SshBootstrapper(host, port, user, ppkPath, false);
+    // Use provided private key file (PEM RSA)
+    var sb = new SshBootstrapper(host, user, ppkPath, port);
         var res = sb.RunCommand("echo privkey-ok");
         Assert.That(res.ExitCode, Is.EqualTo(0), $"Remote command failed: stdout='{res.Output}' stderr='{res.Error}'");
         Assert.That(res.Output.Contains("privkey-ok"), Is.True);

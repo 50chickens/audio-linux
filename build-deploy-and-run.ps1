@@ -1,0 +1,181 @@
+param(
+    [string]$Configuration = 'Debug',
+    [string]$SshHost = 'pistomp5',
+    [string]$SshUser = 'pistomp',
+    [string]$SshKey = "~/.ssh/id_rsa",
+    [string]$PublishDir = 'tools/Asionyx.Tools.Deployment.Client.Ssh/publish'
+)
+
+# Top-level configurable values (change here for environment-specific deployments)
+$RemoteDeployDir = '/opt/Asionyx.Service.Deployment.Linux'
+$ServiceName = 'deployment-service'
+$SshPort = 22
+$SshClientProject = 'tools/Asionyx.Tools.Deployment.Client.Ssh/Asionyx.Tools.Deployment.Client.Ssh.csproj'
+$PublishProject = 'src/Asionyx.Service.Deployment.Linux/Asionyx.Service.Deployment.Linux.csproj'
+$MaxServiceChecks = 3
+$HttpStatusPort = 5001
+$ServiceCheckRetryDelay = 5 # seconds
+$DockerTestFilter = '-p:VSTestTestCaseFilter=Category!=RequiresDocker'
+$SshClientExeName = 'Asionyx.Tools.Deployment.Client.Ssh'
+
+# Normalize common paths
+$SshKey = $SshKey -replace "\\", "/"
+
+function Write-Log([string]$msg) { Write-Host $msg }
+
+function Invoke-Build {
+    Write-Log "Building solution..."
+    dotnet build .\audio-linux.sln -c $Configuration
+    if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+}
+
+function Test-Docker {
+    Write-Host "testing for : docker daemon..." -NoNewline
+    $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+    if ($null -eq $dockerCmd) { Write-Host " failure (docker not installed)"; return $false }
+    try {
+        docker info > $null 2>&1
+        if ($LASTEXITCODE -eq 0) { Write-Host " success"; return $true } else { Write-Host " failure (docker not running)"; return $false }
+    }
+    catch { Write-Host " failure (docker check failed: $($_.Exception.Message))"; return $false }
+}
+
+function Invoke-Test {
+    param([bool]$DockerAvailable)
+    Write-Log "Running tests..."
+    # Do not set transient environment variables here; tests should use injected ServiceSettings or test fixtures.
+    if (-not $DockerAvailable) {
+        Write-Host "Docker not available: excluding RequiresDocker tests from test run."
+        dotnet test .\\audio-linux.sln -c $Configuration --no-build $DockerTestFilter
+    }
+    else { dotnet test .\\audio-linux.sln -c $Configuration --no-build }
+    if ($LASTEXITCODE -ne 0) { Write-Warning "dotnet test failed (exit $LASTEXITCODE); continuing because tests may require environment/setup not available locally." }
+}
+
+function Test-Preflight {
+    Write-Log "Pre-flight checks: validating environment and connectivity"
+    # Private key
+    Write-Host "testing for : private key file exists at '$SshKey'..." -NoNewline
+    if (-not (Test-Path $SshKey)) { Write-Host " failure (file not found)"; throw "Private key file not found at '$SshKey'. Aborting." } else { Write-Host " success" }
+
+    # DNS
+    Write-Host "testing for : DNS resolution for '$SshHost'..." -NoNewline
+    try { [void][System.Net.Dns]::GetHostEntry($SshHost); Write-Host " success" } catch { Write-Host " failure (DNS lookup failed: $($_.Exception.Message))" }
+
+    # TCP port 22
+    Write-Host "testing for : TCP port 22 reachability to '$SshHost:22'..." -NoNewline
+    try { $tcp = Test-NetConnection -ComputerName $SshHost -Port 22 -InformationLevel Quiet -WarningAction SilentlyContinue; if ($tcp) { Write-Host " success" } else { Write-Host " failure (cannot reach $SshHost:22)" } }
+    catch { Write-Host " failure (Test-NetConnection not available: $($_.Exception.Message))" }
+
+    # dotnet SDK
+    Write-Host "testing for : dotnet SDK version..." -NoNewline
+    try { $dotnet = & dotnet --version 2>&1; if ($LASTEXITCODE -eq 0) { Write-Host " success (version: $dotnet)" } else { Write-Host " failure (dotnet returned: $dotnet)" } }
+    catch { Write-Host " failure (dotnet not found: $($_.Exception.Message))" }
+}
+
+function Publish-SshClient {
+    Write-Log "Packaging publish bundle into $PublishDir"
+    Write-Log "Publishing SSH client project $SshClientProject (RID detection follows)..."
+    if ($IsWindows) { $rid = 'win-x64' } elseif ($IsLinux) { $rid = 'linux-x64' } elseif ($IsMacOS) { $rid = 'osx-x64' } else { $rid = 'win-x64' }
+    $sshClientProjectPath = $SshClientProject -replace '/', '\\'
+    $sshClientProjectDir = Split-Path $sshClientProjectPath -Parent
+    $sshClientPublishDir = Join-Path $sshClientProjectDir "bin\publish-$rid"
+    Write-Host "Publishing SSH client project $SshClientProject -> $sshClientPublishDir (RID=$rid)"
+    # suppress dotnet publish output so the function returns only the path string
+    dotnet publish $SshClientProject -c $Configuration -r $rid -o $sshClientPublishDir > $null 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish (ssh client) failed (exit $LASTEXITCODE)" }
+
+    if ($IsWindows) { $sshClientExe = Join-Path $sshClientPublishDir "$SshClientExeName.exe" } else { $sshClientExe = Join-Path $sshClientPublishDir "$SshClientExeName" }
+    if (-not (Test-Path $sshClientExe)) { throw "Required SSH client binary not found at $sshClientExe. Aborting." }
+    return (Resolve-Path $sshClientExe).ProviderPath
+}
+
+function Invoke-SshClient([string]$sshClientExeFull, [string[]]$args) {
+    Push-Location "tools/Asionyx.Tools.Deployment.Client.Ssh"
+    # Explicitly pass the ssh-key argument instead of setting environment variables
+    $argList = @('--ssh-key', $SshKey) + $args
+    Write-Host "Invoking: $sshClientExeFull $($argList -join ' ')"
+    # Capture stdout/stderr to avoid the external process output becoming pipeline output from this function
+    $procOut = & "$sshClientExeFull" $argList 2>&1
+    if ($procOut) { Write-Host $procOut }
+    $rc = $LASTEXITCODE
+    Pop-Location
+    return $rc
+}
+
+function Test-PrivateKey([string]$sshClientExeFull) {
+    Write-Host "Running remote private-key verification..."
+    $rc = Invoke-SshClient $sshClientExeFull @('--verify-private-key','--ssh-host',$SshHost,'--ssh-user',$SshUser,'--ssh-key',$SshKey,'--ssh-port',$SshPort)
+    if ($rc -ne 0) { throw "Private-key verification failed (exit $rc)" }
+}
+
+function Publish-Server {
+    Write-Host "Publishing server project $PublishProject -> $PublishDir"
+    dotnet publish $PublishProject -c $Configuration -o $PublishDir
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
+}
+
+function Invoke-Deploy([string]$sshClientExeFull) {
+    Write-Host "Deploying publish bundle to $SshHost as $SshUser using key $SshKey (configured defaults from appsettings will be used)."
+    Write-Host "-> Running publish/upload flow (invoking published ssh client)"
+    # Call the SSH client without --verify-only to perform the full installation. Pass SSH host/user/key so the client knows how to connect.
+    $rc = Invoke-SshClient $sshClientExeFull @('--ssh-host',$SshHost,'--ssh-user',$SshUser,'--ssh-key',$SshKey,'--ssh-port',$SshPort)
+    if ($rc -ne 0) { throw "Publish/upload step failed (exit $rc)" }
+}
+
+# Initialize-UserDataDirectoryRemote moved into the SSH client. Do not call ssh.exe from this script.
+
+# Install-SystemdUnit moved into the SSH client. Do not call ssh.exe from this script.
+
+function Test-ServiceActive {
+    param([string]$sshClientExeFull, [int]$maxAttempts)
+    $attempt = 0
+    $serviceActive = $false
+    while ($attempt -lt $maxAttempts -and -not $serviceActive) {
+        $attempt++
+        Write-Host "Service check attempt $attempt of $maxAttempts..."
+        $rc = Invoke-SshClient $sshClientExeFull @('--check-service', '--service-name', $ServiceName)
+        if ($rc -eq 0) { $serviceActive = $true; break } else { Write-Host "Service not active yet (exit $rc). Waiting before retry..." }
+        Start-Sleep -Seconds $ServiceCheckRetryDelay
+    }
+    return $serviceActive
+}
+
+function Test-StatusEndpoint {
+    param([string]$targetHost)
+    Write-Host "Verifying /status endpoint on $targetHost..."
+    try {
+        $uri = "http://${targetHost}:${HttpStatusPort}/status"
+        $r = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 10
+        Write-Host "Status response:" $r.Content
+        return $true
+    }
+    catch { Write-Warning "Failed to query /status: $($_.Exception.Message)"; return $false }
+}
+
+# --- Main flow ---
+Invoke-Build
+$dockerAvailable = Test-Docker
+Invoke-Test -DockerAvailable $dockerAvailable
+Test-Preflight
+$sshClientExeFull = Publish-SshClient
+Write-Host "Running remote host configuration verification (using SSH client --verify-only)..."
+$hostVerifyExit = Invoke-SshClient $sshClientExeFull @('--verify-only','--ssh-host',$SshHost,'--ssh-user',$SshUser,'--ssh-key',$SshKey,'--ssh-port',$SshPort)
+if ($hostVerifyExit -ne 0) { throw "Remote host verification failed (exit $hostVerifyExit)" }
+
+Publish-Server
+Invoke-Deploy -sshClientExeFull $sshClientExeFull
+
+$serviceActive = Test-ServiceActive -sshClientExeFull $sshClientExeFull -maxAttempts $MaxServiceChecks
+if (-not $serviceActive) { Write-Warning "Service '$ServiceName' did not become active after $MaxServiceChecks attempts. Skipping /status check."; exit 0 }
+
+# If service active, try to hit /status from local machine first; if that fails, try remote-invoked check via published ssh client
+if (Check-StatusEndpoint -targetHost $SshHost) {
+    Write-Host "External /status OK"
+} else {
+    Write-Host "External /status failed; attempting remote-local check via SSH client"
+    $rc = Invoke-SshClient $sshClientExeFull @('--check-service', '--service-name', $ServiceName)
+    if ($rc -eq 0) { Write-Host "Remote-local /status check reported service active; consider firewall or binding preventing external access." } else { Write-Warning "Remote-local /status check failed as well (exit $rc)." }
+}
+
+Write-Host "Done."

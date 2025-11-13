@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace Asionyx.Tools.Deployment.Services;
+namespace Asionyx.Service.Deployment.Linux.Services;
 
 public record AuditEntry(string Id, string Action, string Status, string? Details, System.DateTime Timestamp);
 

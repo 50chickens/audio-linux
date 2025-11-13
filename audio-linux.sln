@@ -6,7 +6,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioRouter", "src\AudioRouter\AudioRouter.csproj", "{2C292EF9-24B9-D9A2-AA21-8C436102A3D3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Asionyx.Tools.Deployment", "src\Asionyx.Tools.Deployment\Asionyx.Tools.Deployment.csproj", "{1D481AF3-4BC0-10B0-2837-6EAC7F62FA1B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Asionyx.Service.Deployment.Linux", "src\Asionyx.Service.Deployment.Linux\Asionyx.Service.Deployment.Linux.csproj", "{1D481AF3-4BC0-10B0-2837-6EAC7F62FA1B}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioRouter.Library.Audio", "src\AudioRouter.Library.Audio\AudioRouter.Library.Audio.csproj", "{6B2E612A-5A24-A1D8-D166-062858A270A6}"
 EndProject

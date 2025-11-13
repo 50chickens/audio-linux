@@ -1,7 +1,10 @@
 using System.Text;
 using Testcontainers.Sshd;
+using NUnit.Framework;
 namespace DotNet.Testcontainers.Tests.Integration.Sshd;
-public static class SshdContainerTest
+[TestFixture]
+[Category("RequiresDocker")]
+public class SshdContainerTest
 {
     [Test]
     public static async Task Sshd_WithPrivateKeyFromEnv_AllowsKeyAuth()
@@ -30,7 +33,8 @@ public static class SshdContainerTest
 
     await container.StartAsync(CancellationToken.None);
         var host = container.Hostname;
-    var sshPort = container.GetMappedPublicPort(SshdBuilder.SshdPort);
+    var sshPortRaw = container.GetMappedPublicPort(SshdBuilder.SshdPort);
+    int sshPort = Convert.ToInt32(sshPortRaw);
 
             using (var ms = new MemoryStream(Encoding.ASCII.GetBytes(privatePem)))
             {
@@ -76,7 +80,8 @@ public static class SshdContainerTest
     await container.StartAsync(CancellationToken.None);
 
         var host = container.Hostname;
-    var sshPort = container.GetMappedPublicPort(SshdBuilder.SshdPort);
+    var sshPortRaw = container.GetMappedPublicPort(SshdBuilder.SshdPort);
+    int sshPort = Convert.ToInt32(sshPortRaw);
 
             // Upload a small file using SCP
             var content = "hello-scp";
@@ -150,7 +155,8 @@ public static class SshdContainerTest
             await container.StartAsync(CancellationToken.None);
 
             var host = container.Hostname;
-            var sshPort = container.GetMappedPublicPort(SshdBuilder.SshdPort);
+            var sshPortRaw = container.GetMappedPublicPort(SshdBuilder.SshdPort);
+            int sshPort = Convert.ToInt32(sshPortRaw);
 
             // Use the host key file as the client key as well
             using var fs = File.OpenRead(hostKeyPath);

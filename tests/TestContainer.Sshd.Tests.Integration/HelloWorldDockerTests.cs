@@ -15,6 +15,7 @@ namespace Asionyx.Tools.Deployment.Ssh.IntegrationTests;
 
 [TestFixture]
 [Category("Integration")]
+[Category("RequiresDocker")]
 public class HelloWorldDockerTests
 {
     [Test]
@@ -34,16 +35,17 @@ public class HelloWorldDockerTests
             privatePem = sw.ToString();
         }
 
-        // write private key to a temp file for SshBootstrapper to use
-        var tmpDir = Path.Combine(Path.GetTempPath(), "asionyx-ssh-test");
-        Directory.CreateDirectory(tmpDir);
-        var privateKeyPath = Path.Combine(tmpDir, $"id_rsa_{Guid.NewGuid():N}.pem");
-        File.WriteAllText(privateKeyPath, privatePem, Encoding.ASCII);
+    // write private key to a temp file (some helpers may prefer a file-based key)
+    var tmpDir = Path.Combine(Path.GetTempPath(), "asionyx-ssh-test");
+    Directory.CreateDirectory(tmpDir);
+    var privateKeyPath = Path.Combine(tmpDir, $"id_rsa_{Guid.NewGuid():N}.pem");
+    File.WriteAllText(privateKeyPath, privatePem, Encoding.ASCII);
 
         var username = "tcuser";
 
         await using var container = new SshdBuilder()
             .WithUsername(username)
+            .WithTestUserSetup(username)
             .WithPrivateKey(privatePem, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys")
             .Build();
 
@@ -54,11 +56,17 @@ public class HelloWorldDockerTests
             var host = container.Hostname;
             var port = (int)container.GetMappedPublicPort(SshdBuilder.SshdPort);
 
-            var sb = new SshBootstrapper(host, port, username, privateKeyPath);
-            var result = sb.RunCommand("echo hello-asionyx");
-
-            Assert.That(result.ExitCode, Is.EqualTo(0));
-            Assert.That(result.Output?.Trim(), Is.EqualTo("hello-asionyx"));
+            // Use Renci.SshNet directly to exercise SSH over the created key
+            using (var ms = new MemoryStream(Encoding.ASCII.GetBytes(privatePem)))
+            {
+                var pk = new Renci.SshNet.PrivateKeyFile(ms);
+                using var client = new Renci.SshNet.SshClient(host, port, username, pk);
+                client.Connect();
+                var cmd = client.RunCommand("echo hello-asionyx");
+                Assert.That(cmd.ExitStatus, Is.EqualTo(0));
+                Assert.That((cmd.Result ?? string.Empty).Trim(), Is.EqualTo("hello-asionyx"));
+                client.Disconnect();
+            }
         }
         finally
         {

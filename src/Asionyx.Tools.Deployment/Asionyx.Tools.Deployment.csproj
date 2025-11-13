@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Disable static web assets for the old/renamed project to avoid duplicate asset keys -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
+    <EnableStaticWebAssets>false</EnableStaticWebAssets>
   </PropertyGroup>
 
   <ItemGroup>

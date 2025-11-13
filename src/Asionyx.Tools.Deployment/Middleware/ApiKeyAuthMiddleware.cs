@@ -1,15 +1,15 @@
 using System.Net;
 using Microsoft.AspNetCore.Http;
 
-namespace Asionyx.Tools.Deployment.Middleware;
+namespace Asionyx.Service.Deployment.Linux.Middleware;
 
 public class ApiKeyAuthMiddleware
 {
     private readonly RequestDelegate _next;
     private const string ApiKeyHeader = "X-Api-Key";
-    private readonly Asionyx.Tools.Deployment.Models.DeploymentOptions _options;
+        private readonly Asionyx.Service.Deployment.Linux.Models.DeploymentOptions _options;
 
-    public ApiKeyAuthMiddleware(RequestDelegate next, Asionyx.Tools.Deployment.Models.DeploymentOptions options)
+    public ApiKeyAuthMiddleware(RequestDelegate next, Asionyx.Service.Deployment.Linux.Models.DeploymentOptions options)
     {
         _next = next;
         _options = options;
@@ -21,7 +21,8 @@ public class ApiKeyAuthMiddleware
         // - swagger UI
         // - /health
         // - /info (allow anonymous access to any service info endpoint)
-        if (context.Request.Path.StartsWithSegments("/swagger") || context.Request.Path == "/health" || context.Request.Path.StartsWithSegments("/info"))
+        // allow swagger, health, info and status endpoints without key
+        if (context.Request.Path.StartsWithSegments("/swagger") || context.Request.Path == "/health" || context.Request.Path.StartsWithSegments("/info") || context.Request.Path == "/status")
         {
             await _next(context);
             return;
