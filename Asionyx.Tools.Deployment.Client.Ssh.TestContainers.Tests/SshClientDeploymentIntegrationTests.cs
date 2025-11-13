@@ -2,12 +2,20 @@ using System.Diagnostics;
 using System.Text;
 using NUnit.Framework;
 using Testcontainers.Sshd;
+using System.Runtime.InteropServices;
 using Asionyx.Tools.Deployment.Client.Library.Ssh;
 
 [TestFixture]
-[Category("RequiresDocker")]
+[Category("RequiresHost")]
 public class SshClientDeploymentIntegrationTests
 {
+    [SetUp]
+    public void SkipIfWindowsHost()
+    {
+        // Use capability-based skipping so tests can run when a Docker host (WSL or native Linux) is available.
+        RequiresHostHelper.EnsureHostOrIgnore();
+    }
+
     [Test]
     public static async Task Deploy_Server_PublishesAndUploadsAndFileExists()
     {
@@ -62,12 +70,18 @@ public class SshClientDeploymentIntegrationTests
         var hostKeyPath = Path.Combine(Path.GetTempPath(), $"ssh_test_key_{Guid.NewGuid():N}");
         File.WriteAllText(hostKeyPath, privatePem, Encoding.ASCII);
 
-        try
-        {
+    // Set DOCKER_HOST for this test process so tests are self-contained (restored in finally)
+    var prevDockerHost = Environment.GetEnvironmentVariable("DOCKER_HOST", EnvironmentVariableTarget.Process);
+    Environment.SetEnvironmentVariable("DOCKER_HOST", "tcp://localhost:2375", EnvironmentVariableTarget.Process);
+
+    try
+    {
                 var username = "pistomp";
 
                 await using var container = new SshdBuilder()
                     .WithImage("audio-linux/ci-systemd-trixie:local")
+                    // Bind the host cgroup filesystem into the container to help systemd boot in non-privileged environments
+                    .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup")
                     .WithTestUserSetup(username)
                     .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys")
                     .Build();
@@ -91,7 +105,7 @@ public class SshClientDeploymentIntegrationTests
                 var (dotExit, dotOut, dotErr) = await ExecRoot("which dotnet || true");
                 if (string.IsNullOrWhiteSpace(sysOut) || string.IsNullOrWhiteSpace(dotOut))
                 {
-                    Assert.Ignore("Test requires a target image with systemd and dotnet installed (skipping).");
+                    Assert.Fail("Test requires a target image with systemd and dotnet installed; image is missing required runtime or systemd.");
                 }
 
                 // Ensure the new non-root user has passwordless sudo so deployment can use sudo non-interactively
@@ -175,6 +189,8 @@ public class SshClientDeploymentIntegrationTests
         {
             try { File.Delete(hostKeyPath); } catch { }
             try { Directory.Delete(publishDir, true); } catch { }
+            // restore DOCKER_HOST
+            Environment.SetEnvironmentVariable("DOCKER_HOST", prevDockerHost, EnvironmentVariableTarget.Process);
         }
     }
 }

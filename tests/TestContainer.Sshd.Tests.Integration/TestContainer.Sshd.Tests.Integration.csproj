@@ -20,8 +20,16 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="NUnit3TestAdapter" Version="5.2.0" />
-    
-	  
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- include shared test utilities -->
+    <Compile Include="..\TestUtilities\RequiresHostHelper.cs">
+      <Link>TestUtilities\RequiresHostHelper.cs</Link>
+    </Compile>
+    <Compile Include="..\TestUtilities\RequiresHostTestSetup.cs">
+      <Link>TestUtilities\RequiresHostTestSetup.cs</Link>
+    </Compile>
   </ItemGroup>
 
   <ItemGroup>

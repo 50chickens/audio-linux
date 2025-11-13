@@ -16,12 +16,12 @@ public class LogQueryTests
     [SetUp]
     public void Setup()
     {
-        // Ensure an API key is present for the app
-        Environment.SetEnvironmentVariable("DEPLOY_API_KEY", "testkey");
-
-        // Create a temp content root with a logs file
-        var temp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
-        Directory.CreateDirectory(temp);
+    // Create a temp content root with a logs file
+    var temp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+    Directory.CreateDirectory(temp);
+    // Ensure an API key is present for the app by writing ServiceSettings.release.json into the content root
+    var release = Path.Combine(temp, "ServiceSettings.release.json");
+    File.WriteAllText(release, "{ \"ApiKey\": \"testkey\" }");
         Directory.CreateDirectory(Path.Combine(temp, "logs"));
 
         var logPath = Path.Combine(temp, "logs", "deployment.log");

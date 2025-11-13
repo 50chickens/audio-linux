@@ -1,11 +1,18 @@
 using System.Text;
 using Testcontainers.Sshd;
+using System.Runtime.InteropServices;
 using NUnit.Framework;
 namespace DotNet.Testcontainers.Tests.Integration.Sshd;
 [TestFixture]
-[Category("RequiresDocker")]
+[Category("RequiresHost")]
 public class SshdContainerTest
 {
+    [SetUp]
+    public void SkipIfWindowsHost()
+    {
+        RequiresHostHelper.EnsureHostOrIgnore();
+    }
+
     [Test]
     public static async Task Sshd_WithPrivateKeyFromEnv_AllowsKeyAuth()
     {
@@ -26,12 +33,26 @@ public class SshdContainerTest
 
         var username = "tcuser";
 
+        // Ensure docker host is set for the test process so CI/IDE don't need external config
+        var prevDh = Environment.GetEnvironmentVariable("DOCKER_HOST", EnvironmentVariableTarget.Process);
+        Environment.SetEnvironmentVariable("DOCKER_HOST", "tcp://localhost:2375", EnvironmentVariableTarget.Process);
+
         await using var container = new SshdBuilder()
+            .WithImage("audio-linux/ci-systemd-trixie:local")
+            // Bind host cgroup to enable systemd inside container when possible
+            .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup")
             .WithUsername(username)
             .WithPrivateKey(privatePem, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys")
             .Build();
 
-    await container.StartAsync(CancellationToken.None);
+    try
+    {
+        await container.StartAsync(CancellationToken.None);
+    }
+    finally
+    {
+        Environment.SetEnvironmentVariable("DOCKER_HOST", prevDh, EnvironmentVariableTarget.Process);
+    }
         var host = container.Hostname;
     var sshPortRaw = container.GetMappedPublicPort(SshdBuilder.SshdPort);
     int sshPort = Convert.ToInt32(sshPortRaw);

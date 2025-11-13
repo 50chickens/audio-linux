@@ -1,13 +1,13 @@
 param(
-    [string]$ImageTag = 'audio-linux/ci-systemd-dotnet:local',
+    [string]$ImageTag = 'audio-linux/ci-systemd-trixie:local',
     [string]$ContainerName = 'audio-ci-smoke',
     [int]$HostHttpPort = 5001,
     [int]$HostSshPort = 2222,
     [int]$TimeoutSeconds = 60
 )
 
-Write-Host "Building image $ImageTag from build/ci-systemd-dotnet.Dockerfile..."
-docker build -f build/ci-systemd-dotnet.Dockerfile -t $ImageTag .
+Write-Host "Building image $ImageTag from build/ci-systemd-trixie.Dockerfile..."
+docker build -f build/ci-systemd-trixie.Dockerfile -t $ImageTag .
 
 if ($LASTEXITCODE -ne 0) { throw "Docker build failed" }
 

@@ -19,9 +19,13 @@ public class FilesUploadTests
     [SetUp]
     public void Setup()
     {
-        Environment.SetEnvironmentVariable("DEPLOY_API_KEY", "testkey");
         var temp = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         Directory.CreateDirectory(temp);
+
+        // Create a ServiceSettings.release.json containing the test API key so the app will read it from the content root.
+        var release = Path.Combine(temp, "ServiceSettings.release.json");
+        File.WriteAllText(release, "{ \"ApiKey\": \"testkey\" }");
+
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseContentRoot(temp));
     }
 

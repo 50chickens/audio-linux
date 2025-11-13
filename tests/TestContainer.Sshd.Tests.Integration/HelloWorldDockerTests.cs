@@ -9,15 +9,22 @@ using Org.BouncyCastle.Security;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.Crypto.Parameters;
 using Testcontainers.Sshd;
+using System.Runtime.InteropServices;
 using Asionyx.Tools.Deployment.Ssh;
 
 namespace Asionyx.Tools.Deployment.Ssh.IntegrationTests;
 
 [TestFixture]
 [Category("Integration")]
-[Category("RequiresDocker")]
+[Category("RequiresHost")]
 public class HelloWorldDockerTests
 {
+    [SetUp]
+    public void SkipIfWindowsHost()
+    {
+        RequiresHostHelper.EnsureHostOrIgnore();
+    }
+
     [Test]
     public async Task HelloWorld_via_SshBootstrapper_On_SshdContainer()
     {
@@ -43,13 +50,25 @@ public class HelloWorldDockerTests
 
         var username = "tcuser";
 
+        // Ensure docker host is set for the test process
+        var prev = Environment.GetEnvironmentVariable("DOCKER_HOST", EnvironmentVariableTarget.Process);
+        Environment.SetEnvironmentVariable("DOCKER_HOST", "tcp://localhost:2375", EnvironmentVariableTarget.Process);
+
         await using var container = new SshdBuilder()
+            .WithImage("audio-linux/ci-systemd-trixie:local")
             .WithUsername(username)
             .WithTestUserSetup(username)
             .WithPrivateKey(privatePem, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys")
             .Build();
 
-        await container.StartAsync(CancellationToken.None);
+        try
+        {
+            await container.StartAsync(CancellationToken.None);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("DOCKER_HOST", prev, EnvironmentVariableTarget.Process);
+        }
 
         try
         {

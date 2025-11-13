@@ -14,9 +14,11 @@ public class MiddlewareTests
     [SetUp]
     public void Setup()
     {
-        Environment.SetEnvironmentVariable("DEPLOY_API_KEY", "testkey");
         var temp = System.IO.Path.Combine(System.IO.Path.GetTempPath(), System.IO.Path.GetRandomFileName());
         System.IO.Directory.CreateDirectory(temp);
+        // Write ServiceSettings.release.json with ApiKey so the application uses it for middleware auth
+        var release = System.IO.Path.Combine(temp, "ServiceSettings.release.json");
+        System.IO.File.WriteAllText(release, "{ \"ApiKey\": \"testkey\" }");
         // Ensure a logs folder and a minimal deployment.log exists so the LogsController can return results
         var logsDir = System.IO.Path.Combine(temp, "logs");
         System.IO.Directory.CreateDirectory(logsDir);

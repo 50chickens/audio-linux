@@ -6,12 +6,20 @@ using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Testcontainers.Sshd;
+using System.Runtime.InteropServices;
 using Asionyx.Tools.Deployment.Client.Library.Ssh;
 
 [TestFixture]
-[Category("RequiresDocker")]
+[Category("RequiresHost")]
 public class DebugPreserveContainerTests
 {
+    [SetUp]
+    public void SkipIfWindowsHost()
+    {
+        // Use capability-based skipping so tests run when a Docker host (WSL/native) is available and the image can be built.
+        RequiresHostHelper.EnsureHostOrIgnore();
+    }
+
     // This integration diagnostic uses the Testcontainers SshdBuilder and startup callbacks
     // to provision the test user and SSH keys. It avoids privileged mode and host volume
     // mounts; if the image requires privileged/container mounts to run systemd, the test
@@ -78,6 +86,8 @@ public class DebugPreserveContainerTests
             // Build a Testcontainers-based Sshd container using the CI image. Do NOT use volume mounts or privileged mode here.
             var builder = new SshdBuilder()
                 .WithImage("audio-linux/ci-systemd-trixie:local")
+                // Mount host cgroup into container to improve systemd boot behavior on WSL dockerd
+                .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup")
                 .WithTestUserSetup(username)
                 .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys");
 
@@ -216,7 +226,7 @@ public class DebugPreserveContainerTests
         try
         {
             var builder = new SshdBuilder()
-                .WithImage("audio-linux/ci-systemd-dotnet:local")
+                .WithImage("audio-linux/ci-systemd-trixie:local")
                 .WithTestUserSetup(username)
                 .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys");
 
@@ -240,7 +250,7 @@ public class DebugPreserveContainerTests
                 try
                 {
                     // The test uses the image name in the builder; replicate here for lookup.
-                    var imageName = "audio-linux/ci-systemd-dotnet:local";
+                    var imageName = "audio-linux/ci-systemd-trixie:local";
                     var listPsi = new ProcessStartInfo("docker", $"ps -a --filter \"ancestor={imageName}\" --format \"{{{{.ID}}}}|{{{{.Image}}}}|{{{{.Status}}}}|{{{{.Names}}}}\"")
                     {
                         RedirectStandardOutput = true,
@@ -345,6 +355,160 @@ public class DebugPreserveContainerTests
         finally
         {
             try { File.Delete(hostKeyPath); } catch { }
+        }
+    }
+
+    // New test: ensure we can run Testcontainers by setting DOCKER_HOST programmatically
+    // inside the test process (no external environment configuration required).
+    [Test]
+    public static async Task Deploy_Server_Debug_WithInTestDockerHost()
+    {
+        var username = "pistomp";
+
+        // Set DOCKER_HOST for this test process only so CI/IDE don't need external env vars.
+        const string dockerHostValue = "tcp://localhost:2375";
+        var previous = Environment.GetEnvironmentVariable("DOCKER_HOST", EnvironmentVariableTarget.Process);
+        Environment.SetEnvironmentVariable("DOCKER_HOST", dockerHostValue, EnvironmentVariableTarget.Process);
+
+        // Generate RSA keypair and write to temp host key file (reuse code pattern)
+        var keyGen = new Org.BouncyCastle.Crypto.Generators.RsaKeyPairGenerator();
+        keyGen.Init(new Org.BouncyCastle.Crypto.KeyGenerationParameters(new Org.BouncyCastle.Security.SecureRandom(), 2048));
+        var keyPair = keyGen.GenerateKeyPair();
+        string privatePem;
+        using (var sw = new StringWriter())
+        {
+            var pw = new Org.BouncyCastle.OpenSsl.PemWriter(sw);
+            pw.WriteObject(keyPair.Private);
+            pw.Writer.Flush();
+            privatePem = sw.ToString();
+        }
+
+        var hostKeyPath = Path.Combine(Path.GetTempPath(), $"ssh_test_key_{Guid.NewGuid():N}");
+        File.WriteAllText(hostKeyPath, privatePem, Encoding.ASCII);
+
+        try
+        {
+            var builder = new SshdBuilder()
+                .WithImage("audio-linux/ci-systemd-trixie:local")
+                .WithTestUserSetup(username)
+                .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys");
+
+            var container = builder.Build();
+
+            var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+            try
+            {
+                await container.StartAsync(cts.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                TestContext.WriteLine($"StartAsync completed with exception: {ex.Message}");
+                // Fall back to docker CLI to collect diagnostics
+                try
+                {
+                    var imageName = "audio-linux/ci-systemd-trixie:local";
+                    var listPsi = new ProcessStartInfo("docker", $"ps -a --filter \"ancestor={imageName}\" --format \"{{{{.ID}}}}|{{{{.Image}}}}|{{{{.Status}}}}|{{{{.Names}}}}\"")
+                    {
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using var listProc = Process.Start(listPsi);
+                    if (listProc != null)
+                    {
+                        var listOut = await listProc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                        var listErr = await listProc.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                        listProc.WaitForExit();
+                        TestContext.WriteLine("docker ps -a output:\n" + listOut);
+                        if (!string.IsNullOrWhiteSpace(listErr)) TestContext.WriteLine("docker ps -a stderr:\n" + listErr);
+
+                        var firstLine = listOut?.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                        if (!string.IsNullOrWhiteSpace(firstLine))
+                        {
+                            var id = firstLine.Split('|')[0];
+                            TestContext.WriteLine($"Found candidate container id={id} for image {imageName}");
+
+                            var logsPsi = new ProcessStartInfo("docker", $"logs --timestamps --tail 500 {id}")
+                            {
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                UseShellExecute = false,
+                                CreateNoWindow = true
+                            };
+
+                            using var logsProc = Process.Start(logsPsi);
+                            if (logsProc != null)
+                            {
+                                var logsOut = await logsProc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                                var logsErr = await logsProc.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                                logsProc.WaitForExit();
+                                if (!string.IsNullOrWhiteSpace(logsOut)) TestContext.WriteLine("--- LOG (docker CLI stdout) ---\n" + logsOut);
+                                if (!string.IsNullOrWhiteSpace(logsErr)) TestContext.WriteLine("--- LOG (docker CLI stderr) ---\n" + logsErr);
+                            }
+
+                            var inspectPsi = new ProcessStartInfo("docker", $"inspect {id}")
+                            {
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                UseShellExecute = false,
+                                CreateNoWindow = true
+                            };
+                            using var inspectProc = Process.Start(inspectPsi);
+                            if (inspectProc != null)
+                            {
+                                var inspOut = await inspectProc.StandardOutput.ReadToEndAsync().ConfigureAwait(false);
+                                var inspErr = await inspectProc.StandardError.ReadToEndAsync().ConfigureAwait(false);
+                                inspectProc.WaitForExit();
+                                if (!string.IsNullOrWhiteSpace(inspOut)) TestContext.WriteLine("--- INSPECT ---\n" + inspOut);
+                                if (!string.IsNullOrWhiteSpace(inspErr)) TestContext.WriteLine("--- INSPECT ERR ---\n" + inspErr);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ie)
+                {
+                    TestContext.WriteLine($"Diagnostic docker CLI inspection failed: {ie.Message}");
+                }
+
+                throw;
+            }
+
+            TestContext.WriteLine($"Container started successfully id={container.Id}");
+
+            // Simple SSH probe
+            var host = container.Hostname;
+            var sshPort = checked((int)container.GetMappedPublicPort(SshdBuilder.SshdPort));
+            var sshReady = false;
+            try
+            {
+                using var fs = File.OpenRead(hostKeyPath);
+                var pk = new Renci.SshNet.PrivateKeyFile(fs);
+                var keyAuth = new Renci.SshNet.PrivateKeyAuthenticationMethod(username, pk);
+                var conn = new Renci.SshNet.ConnectionInfo(host, sshPort, username, keyAuth);
+                using var client = new Renci.SshNet.SshClient(conn);
+                client.Connect();
+                if (client.IsConnected)
+                {
+                    sshReady = true;
+                    var checkCmd = client.RunCommand("echo ready");
+                    TestContext.WriteLine($"SSH probe: exit={checkCmd.ExitStatus} out={checkCmd.Result} err={checkCmd.Error}");
+                    client.Disconnect();
+                }
+            }
+            catch (Exception ex)
+            {
+                TestContext.WriteLine($"SSH probe failed: {ex.Message}");
+            }
+
+            Assert.That(sshReady, Is.True, "SSH was not ready after StartAsync completed.");
+        }
+        finally
+        {
+            try { File.Delete(hostKeyPath); } catch { }
+            // Restore previous DOCKER_HOST (if any)
+            Environment.SetEnvironmentVariable("DOCKER_HOST", previous, EnvironmentVariableTarget.Process);
         }
     }
 

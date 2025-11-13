@@ -32,7 +32,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
-          file: build/ci-systemd-dotnet.Dockerfile
+          file: build/ci-systemd-trixie.Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/audio-linux/ci-systemd-dotnet:latest
+            ghcr.io/${{ github.repository_owner }}/audio-linux/ci-systemd-trixie:latest
