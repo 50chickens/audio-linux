@@ -1,6 +1,7 @@
 using NLog.Layouts;
 using NLog.Targets;
 using NLog.Web;
+using Asionyx.Service.Deployment.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,41 +53,50 @@ if (string.IsNullOrWhiteSpace(serviceSettings.DataFolder))
 var dataFolderPath = ExpandTilde(serviceSettings.DataFolder);
 
 // Read API key from ServiceSettings (if present) or legacy appsettings key
-var configuredApiKey = serviceSettings.ApiKey ?? builder.Configuration["api-key"];
-
-if (string.IsNullOrWhiteSpace(configuredApiKey))
+// Create an ApiKeyResolver that prefers the value in ServiceSettings, and if absent
+// generates and persists a new key once.
+var apiKeyLock = new object();
+ApiKeyResolver apiKeyResolver = () =>
 {
-    // No API key provided — generate a new one and persist it to ServiceSettings.release.json in the content root.
-    configuredApiKey = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
-    try
+    if (!string.IsNullOrWhiteSpace(serviceSettings.ApiKey)) return serviceSettings.ApiKey!;
+    lock (apiKeyLock)
     {
-        var contentRoot = builder.Environment.ContentRootPath ?? System.IO.Directory.GetCurrentDirectory();
-        var releaseSettingsPath = System.IO.Path.Combine(contentRoot, "ServiceSettings.release.json");
-
-        System.Text.Json.Nodes.JsonObject root;
-        if (System.IO.File.Exists(releaseSettingsPath))
+        if (!string.IsNullOrWhiteSpace(serviceSettings.ApiKey)) return serviceSettings.ApiKey!;
+        var generated = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        serviceSettings.ApiKey = generated;
+        try
         {
-            var txt = System.IO.File.ReadAllText(releaseSettingsPath);
-            var parsed = System.Text.Json.Nodes.JsonNode.Parse(txt);
-            root = parsed as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
+            var contentRoot = builder.Environment.ContentRootPath ?? System.IO.Directory.GetCurrentDirectory();
+            var releaseSettingsPath = System.IO.Path.Combine(contentRoot, "ServiceSettings.release.json");
+
+            System.Text.Json.Nodes.JsonObject root;
+            if (System.IO.File.Exists(releaseSettingsPath))
+            {
+                var txt = System.IO.File.ReadAllText(releaseSettingsPath);
+                var parsed = System.Text.Json.Nodes.JsonNode.Parse(txt);
+                root = parsed as System.Text.Json.Nodes.JsonObject ?? new System.Text.Json.Nodes.JsonObject();
+            }
+            else
+            {
+                root = new System.Text.Json.Nodes.JsonObject();
+            }
+
+            root["ApiKey"] = generated;
+            var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+            System.IO.File.WriteAllText(releaseSettingsPath, root.ToJsonString(opts));
+            Console.WriteLine($"Generated new API key and wrote to {releaseSettingsPath}");
         }
-        else
+        catch (Exception ex)
         {
-            root = new System.Text.Json.Nodes.JsonObject();
+            Console.WriteLine($"Warning: failed to persist new API key to ServiceSettings.release.json: {ex.Message}");
         }
 
-        // Set or overwrite the ApiKey value
-        root["ApiKey"] = configuredApiKey;
+        return serviceSettings.ApiKey!;
+    }
+};
 
-        var opts = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
-        System.IO.File.WriteAllText(releaseSettingsPath, root.ToJsonString(opts));
-        Console.WriteLine($"Generated new API key and wrote to {releaseSettingsPath}");
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Warning: failed to persist new API key to ServiceSettings.release.json: {ex.Message}");
-    }
-}
+// Ensure the resolver is registered and we obtain the current key for any legacy consumers
+var configuredApiKey = apiKeyResolver();
 
 // Run deployment service on a dedicated management port to avoid colliding with other apps
 builder.WebHost.UseUrls("http://*:5001");
@@ -133,11 +143,21 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton(serviceSettings);
 builder.Services.AddSingleton<Asionyx.Service.Deployment.Linux.Services.IAuditStore, Asionyx.Service.Deployment.Linux.Services.FileAuditStore>();
 builder.Services.AddSingleton(new Asionyx.Service.Deployment.Linux.Models.DeploymentOptions { ApiKey = configuredApiKey });
+// Register the ApiKey resolver so consumers (and tests) can resolve the current API key via DI.
+builder.Services.AddApiKeyResolver(apiKeyResolver);
 
 var app = builder.Build();
 
-// API key middleware
-app.UseMiddleware<Asionyx.Service.Deployment.Linux.Middleware.ApiKeyAuthMiddleware>();
+// API key middleware (can be disabled by setting DISABLE_API_KEY=1 in the environment)
+var disableApi = Environment.GetEnvironmentVariable("DISABLE_API_KEY");
+if (string.IsNullOrWhiteSpace(disableApi))
+{
+    app.UseMiddleware<Asionyx.Service.Deployment.Linux.Middleware.ApiKeyAuthMiddleware>();
+}
+else
+{
+    Console.WriteLine("Warning: API key authentication disabled via DISABLE_API_KEY environment variable");
+}
 
 // simple health endpoint (no API key required)
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));

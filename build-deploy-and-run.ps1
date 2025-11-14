@@ -71,6 +71,111 @@ function Test-Preflight {
     Write-Host "testing for : dotnet SDK version..." -NoNewline
     try { $dotnet = & dotnet --version 2>&1; if ($LASTEXITCODE -eq 0) { Write-Host " success (version: $dotnet)" } else { Write-Host " failure (dotnet returned: $dotnet)" } }
     catch { Write-Host " failure (dotnet not found: $($_.Exception.Message))" }
+
+    # Build and start the systemd test image/container inside WSL. All WSL interactions are centralized here
+    # so no C# test code or test helpers need to invoke WSL directly.
+    Test-WslPreflight
+}
+
+function Test-WslPreflight {
+    Write-Log "Pre-flight WSL check: building test image and starting container inside WSL"
+
+    $wslCmd = Get-Command wsl -ErrorAction SilentlyContinue
+    if ($null -eq $wslCmd) { throw "WSL not available on this host; pre-flight requires WSL to build/start the systemd test image." }
+
+    # Find a running WSL distro (prefer non-docker-desktop)
+    $list = wsl -l -v 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Failed to query WSL distros: $list" }
+
+    $distro = $null
+    $lines = $list -split "\r?\n"
+    foreach ($line in $lines) {
+        $trim = $line.Trim()
+        if ($trim -match "^NAME" -or [string]::IsNullOrWhiteSpace($trim)) { continue }
+        if ($trim -match "Running" -and $trim -notmatch "docker-desktop") {
+            # first token is the distro name
+            $parts = $trim -split '\\s+'
+            $distro = $parts[0]
+            break
+        }
+    }
+
+    if (-not $distro) { throw "No running WSL distro found (exclude docker-desktop). Start a distro or ensure Docker is running in WSL." }
+
+    Write-Log "Using WSL distro: $distro"
+
+    # Convert repository Windows path to WSL path
+    $repoWin = (Resolve-Path ".").Path
+    $wslRepo = wsl -d $distro -- wslpath -a "$repoWin" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "wslpath failed to convert path: $wslRepo" }
+    $wslRepo = $wslRepo.Trim()
+
+    # Build the image inside WSL
+    Write-Log "Building docker image inside WSL distro $distro"
+    $buildCmd = "docker build -t audio-linux/ci-systemd-trixie:local -f '$wslRepo/build/ci-systemd-trixie.Dockerfile' '$wslRepo'"
+    $buildOut = wsl -d $distro -- bash -lc "$buildCmd" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host $buildOut
+        throw "Docker build inside WSL failed (distro $distro). See output above."
+    }
+
+    # Ensure any previous test container is removed
+    Write-Log "Removing any existing test container 'audio-linux-ci-systemd'"
+    wsl -d $distro -- bash -lc "docker rm -f audio-linux-ci-systemd 2>/dev/null || true" | Out-Null
+
+    # Start the container in detached mode (entrypoint will start the emulator and the deployment service)
+    Write-Log "Starting test container inside WSL"
+    $runCmd = "docker rm -f audio-linux-ci-systemd 2>/dev/null || true; docker run --name audio-linux-ci-systemd -d -p 5001:5001 -p 5200:5200 audio-linux/ci-systemd-trixie:local"
+    $runOut = wsl -d $distro -- bash -lc "$runCmd" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host $runOut
+        throw "Failed to start systemd test container inside WSL (distro $distro)."
+    }
+
+    Start-Sleep -Seconds 3
+
+    $inspect = wsl -d $distro -- bash -lc "docker inspect -f '{{.State.Running}} {{.State.ExitCode}}' audio-linux-ci-systemd" 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Host $inspect; throw "Failed to inspect started test container inside WSL." }
+
+    $inspect = $inspect.Trim()
+    if ($inspect -like 'true*') {
+        Write-Log "Test container is running inside WSL"
+        return $true
+    }
+    else {
+        Write-Host "Container not running after start: $inspect"
+        $logs = wsl -d $distro -- bash -lc "docker logs --tail 500 audio-linux-ci-systemd" 2>&1
+        Write-Host "--- container logs ---`n$logs`n--- end logs ---"
+        throw "Systemd test container failed to start inside WSL (see logs above)"
+    }
+}
+
+function Publish-ContainerArtifacts {
+    Write-Host "Publishing container artifacts (Deployment, Systemd emulator, Test target)..."
+    # cleanup old publish folders
+    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue -Path "publish" -Verbose:$false
+    New-Item -ItemType Directory -Force -Path publish | Out-Null
+
+    # Deployment app (the existing project may be under src/Asionyx.Tools.Deployment)
+    $deployProj = 'src/Asionyx.Tools.Deployment/Asionyx.Tools.Deployment.csproj'
+    if (-not (Test-Path $deployProj)) { $deployProj = 'src/Asionyx.Service.Deployment.Linux/Asionyx.Service.Deployment.Linux.csproj' }
+    Write-Host "Publishing Deployment project: $deployProj -> publish/Deployment"
+    dotnet publish $deployProj -c $Configuration -o publish/Deployment
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish (Deployment) failed" }
+
+    # Systemd emulator
+    $sysProj = 'src/Asionyx.Service.Systemd/Asionyx.Service.Systemd.csproj'
+    Write-Host "Publishing Systemd emulator: $sysProj -> publish/Systemd"
+    dotnet publish $sysProj -c $Configuration -o publish/Systemd
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish (Systemd) failed" }
+
+    # Test target service
+    $testProj = 'src/Asionyx.TestTargetService/Asionyx.TestTargetService.csproj'
+    Write-Host "Publishing TestTarget service: $testProj -> publish/TestTarget"
+    dotnet publish $testProj -c $Configuration -o publish/TestTarget
+    if ($LASTEXITCODE -ne 0) { throw "dotnet publish (TestTarget) failed" }
+
+    Write-Host "Published container artifacts under ./publish"
 }
 
 function Publish-SshClient {
@@ -155,6 +260,7 @@ function Test-StatusEndpoint {
 
 # --- Main flow ---
 Invoke-Build
+$null = Publish-ContainerArtifacts
 $dockerAvailable = Test-Docker
 Invoke-Test -DockerAvailable $dockerAvailable
 Test-Preflight

@@ -28,4 +28,8 @@
     <None Include="..\Asionyx.Tools.Deployment\wwwroot\**\*" CopyToOutputDirectory="PreserveNewest" Link="wwwroot\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\Asionyx.Service.Deployment.Shared\Asionyx.Service.Deployment.Shared.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -40,7 +40,9 @@ public class ServicesController : ControllerBase
         {
             var tmp = Path.Combine(Path.GetTempPath(), req.Name + ".service");
             System.IO.File.WriteAllText(tmp, req.UnitFileContent);
-            var psi = new ProcessStartInfo("sudo", $"mv \"{tmp}\" /etc/systemd/system/{req.Name}.service && systemctl daemon-reload && systemctl enable --now {req.Name}") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            // Run the multi-part command under a shell so shell operators (&&) are handled correctly.
+            var cmd = $"sudo mv \"{tmp}\" /etc/systemd/system/{req.Name}.service && systemctl daemon-reload && systemctl enable --now {req.Name}";
+            var psi = new ProcessStartInfo("/bin/sh", "-c \"" + cmd.Replace("\"", "\\\"") + "\"") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
             var p = Process.Start(psi)!; p.WaitForExit();
             var outp = await p.StandardOutput.ReadToEndAsync();
             var err = await p.StandardError.ReadToEndAsync();

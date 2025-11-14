@@ -13,7 +13,7 @@ public static class RequiresHostHelper_Legacy
     // On failure the helper will call Assert.Ignore so calling tests are skipped rather than failing.
     public static void EnsureHostOrIgnore(string imageName = "audio-linux/ci-systemd-trixie:local", string dockerfilePath = "build/ci-systemd-trixie.Dockerfile")
     {
-        // Temporary set DOCKER_HOST to the common WSL address if not set; tests in this repo expect tcp://localhost:2375 in many cases.
+    // Temporary set DOCKER_HOST to a common TCP endpoint if not set; tests in this repo expect tcp://localhost:2375 in many cases.
         var prev = Environment.GetEnvironmentVariable("DOCKER_HOST", EnvironmentVariableTarget.Process);
         try
         {
@@ -39,7 +39,9 @@ public static class RequiresHostHelper_Legacy
                 Assert.Fail($"Docker daemon not reachable: {ex.Message} - RequiresHost tests must run against a reachable Docker daemon.");
             }
 
-            // Verify the image exists locally. If not, try to build it using docker build.
+            // Verify the image exists locally. The repository pre-flight script (build-deploy-and-run.ps1)
+            // is responsible for building the test image and starting the container. If the image is
+            // missing we fail the test and instruct the caller to run pre-flight.
             try
             {
                 var dockerConfig = new Docker.DotNet.DockerClientConfiguration();
@@ -48,41 +50,20 @@ public static class RequiresHostHelper_Legacy
                 var found = images.Any(i => (i.RepoTags ?? new System.Collections.Generic.List<string>()).Contains(imageName));
                 if (!found)
                 {
-                    // Attempt to build the image from repo. Use Docker CLI (reliable and available on Docker Desktop/WSL setups).
                     var repoRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(TestContext.CurrentContext.WorkDirectory, "..", "..", "..", ".."));
                     var absDockerfile = System.IO.Path.Combine(repoRoot, dockerfilePath);
+                    var hint = "Run build-deploy-and-run.ps1 pre-flight to build/start the required test image and container.";
                     if (!System.IO.File.Exists(absDockerfile))
                     {
-                            Assert.Fail($"Required dockerfile '{absDockerfile}' not found; cannot build '{imageName}' - RequiresHost tests must be able to build the image.");
+                            Assert.Fail($"Required dockerfile '{absDockerfile}' not found; cannot build '{imageName}'. {hint}");
                     }
 
-                    var psi = new ProcessStartInfo("docker", $"build -t {imageName} -f \"{absDockerfile}\" \"{System.IO.Path.GetDirectoryName(absDockerfile)}\"")
-                    {
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-
-                    using var p = Process.Start(psi);
-                    if (p == null)
-                    {
-                        Assert.Fail($"Failed to start 'docker build' to create {imageName}; RequiresHost tests must be able to build the image.");
-                    }
-
-                    var stdout = p.StandardOutput.ReadToEnd();
-                    var stderr = p.StandardError.ReadToEnd();
-                    p.WaitForExit();
-                    if (p.ExitCode != 0)
-                    {
-                        TestContext.WriteLine("docker build failed:\n" + stdout + "\n" + stderr);
-                        Assert.Fail($"docker build for {imageName} failed with exit code {p.ExitCode}; RequiresHost tests must be able to build the image.");
-                    }
+                    Assert.Fail($"Required docker image '{imageName}' not found locally. {hint}");
                 }
             }
             catch (Exception ex)
             {
-                Assert.Fail($"Failed to verify/build docker image: {ex.Message} - RequiresHost tests must be able to verify or build the image.");
+                Assert.Fail($"Failed to verify docker image: {ex.Message} - RequiresHost tests must be run after repository pre-flight.");
             }
         }
         finally

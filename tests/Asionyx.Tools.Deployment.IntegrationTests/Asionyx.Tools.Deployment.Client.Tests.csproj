@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Asionyx.Service.Deployment.Linux\Asionyx.Service.Deployment.Linux.csproj" />
+    <ProjectReference Include="..\..\src\Asionyx.Service.Deployment.Shared\Asionyx.Service.Deployment.Shared.csproj" />
   </ItemGroup>
 
 </Project>

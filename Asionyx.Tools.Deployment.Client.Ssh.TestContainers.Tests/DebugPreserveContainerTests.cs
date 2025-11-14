@@ -16,7 +16,7 @@ public class DebugPreserveContainerTests
     [SetUp]
     public void SkipIfWindowsHost()
     {
-        // Use capability-based skipping so tests run when a Docker host (WSL/native) is available and the image can be built.
+        // Use capability-based skipping so tests run when a Docker host (local or remote Linux) is available and the image can be built.
         RequiresHostHelper.EnsureHostOrIgnore();
     }
 
@@ -84,9 +84,13 @@ public class DebugPreserveContainerTests
         try
         {
             // Build a Testcontainers-based Sshd container using the CI image. Do NOT use volume mounts or privileged mode here.
+            // Provide per-run API key for the deployment service inside the image
+            var apiKey = Guid.NewGuid().ToString("N");
+
             var builder = new SshdBuilder()
                 .WithImage("audio-linux/ci-systemd-trixie:local")
-                // Mount host cgroup into container to improve systemd boot behavior on WSL dockerd
+                .WithEnvironment("API_KEY", apiKey)
+                // Mount host cgroup into container to improve systemd boot behavior on some Docker engines
                 .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup")
                 .WithTestUserSetup(username)
                 .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys");
@@ -225,8 +229,10 @@ public class DebugPreserveContainerTests
 
         try
         {
+            var apiKey2 = Guid.NewGuid().ToString("N");
             var builder = new SshdBuilder()
                 .WithImage("audio-linux/ci-systemd-trixie:local")
+                .WithEnvironment("API_KEY", apiKey2)
                 .WithTestUserSetup(username)
                 .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys");
 
@@ -388,8 +394,10 @@ public class DebugPreserveContainerTests
 
         try
         {
+            var apiKey3 = Guid.NewGuid().ToString("N");
             var builder = new SshdBuilder()
                 .WithImage("audio-linux/ci-systemd-trixie:local")
+                .WithEnvironment("API_KEY", apiKey3)
                 .WithTestUserSetup(username)
                 .WithPrivateKeyFileCopied(hostKeyPath, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys");
 

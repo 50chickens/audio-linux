@@ -12,7 +12,7 @@ public class SshClientDeploymentIntegrationTests
     [SetUp]
     public void SkipIfWindowsHost()
     {
-        // Use capability-based skipping so tests can run when a Docker host (WSL or native Linux) is available.
+        // Use capability-based skipping so tests can run when a Docker host (local or remote Linux) is available.
         RequiresHostHelper.EnsureHostOrIgnore();
     }
 
@@ -78,8 +78,12 @@ public class SshClientDeploymentIntegrationTests
     {
                 var username = "pistomp";
 
+                // Per-run API key so the deployment app inside the image uses a known key
+                var apiKey = Guid.NewGuid().ToString("N");
+
                 await using var container = new SshdBuilder()
                     .WithImage("audio-linux/ci-systemd-trixie:local")
+                    .WithEnvironment("API_KEY", apiKey)
                     // Bind the host cgroup filesystem into the container to help systemd boot in non-privileged environments
                     .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup")
                     .WithTestUserSetup(username)

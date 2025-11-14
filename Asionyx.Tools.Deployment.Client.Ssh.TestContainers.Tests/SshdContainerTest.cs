@@ -37,8 +37,12 @@ public class SshdContainerTest
         var prevDh = Environment.GetEnvironmentVariable("DOCKER_HOST", EnvironmentVariableTarget.Process);
         Environment.SetEnvironmentVariable("DOCKER_HOST", "tcp://localhost:2375", EnvironmentVariableTarget.Process);
 
+        // Per-run API key for the deployment service inside the image
+        var apiKey = Guid.NewGuid().ToString("N");
+
         await using var container = new SshdBuilder()
             .WithImage("audio-linux/ci-systemd-trixie:local")
+            .WithEnvironment("API_KEY", apiKey)
             // Bind host cgroup to enable systemd inside container when possible
             .WithBindMount("/sys/fs/cgroup", "/sys/fs/cgroup")
             .WithUsername(username)

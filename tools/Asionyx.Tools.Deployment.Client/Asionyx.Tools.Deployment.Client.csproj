@@ -21,5 +21,8 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Asionyx.Service.Deployment.Shared\Asionyx.Service.Deployment.Shared.csproj" />
+  </ItemGroup>
 
 </Project>

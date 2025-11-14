@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.AspNetCore.Http;
+using Asionyx.Service.Deployment.Shared;
 
 namespace Asionyx.Service.Deployment.Linux.Middleware;
 
@@ -7,12 +8,12 @@ public class ApiKeyAuthMiddleware
 {
     private readonly RequestDelegate _next;
     private const string ApiKeyHeader = "X-Api-Key";
-        private readonly Asionyx.Service.Deployment.Linux.Models.DeploymentOptions _options;
+    private readonly Func<string> _apiKeyResolver;
 
-    public ApiKeyAuthMiddleware(RequestDelegate next, Asionyx.Service.Deployment.Linux.Models.DeploymentOptions options)
+    public ApiKeyAuthMiddleware(RequestDelegate next, Func<string> apiKeyResolver)
     {
         _next = next;
-        _options = options;
+        _apiKeyResolver = apiKeyResolver ?? (() => string.Empty);
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -35,7 +36,7 @@ public class ApiKeyAuthMiddleware
             return;
         }
 
-        var cfgKey = _options?.ApiKey ?? string.Empty;
+        var cfgKey = _apiKeyResolver?.Invoke() ?? string.Empty;
         if (!string.Equals(providedKey, cfgKey, StringComparison.Ordinal))
         {
             context.Response.StatusCode = (int)HttpStatusCode.Forbidden;

@@ -54,8 +54,12 @@ public class HelloWorldDockerTests
         var prev = Environment.GetEnvironmentVariable("DOCKER_HOST", EnvironmentVariableTarget.Process);
         Environment.SetEnvironmentVariable("DOCKER_HOST", "tcp://localhost:2375", EnvironmentVariableTarget.Process);
 
+        // Provide a per-run API key so the deployment service inside the image uses a predictable key
+        var apiKey = Guid.NewGuid().ToString("N");
+
         await using var container = new SshdBuilder()
             .WithImage("audio-linux/ci-systemd-trixie:local")
+            .WithEnvironment("API_KEY", apiKey)
             .WithUsername(username)
             .WithTestUserSetup(username)
             .WithPrivateKey(privatePem, containerPrivateKeyPath: $"/home/{username}/.ssh/id_rsa", containerPublicKeyPath: $"/home/{username}/.ssh/authorized_keys")
