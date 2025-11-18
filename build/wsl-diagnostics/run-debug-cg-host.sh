@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This script runs inside WSL (Ubuntu-24.04) and performs the debug run for systemd.
-# It assumes the image audio-linux/ci-systemd-trixie:local exists in the WSL daemon.
+echo "This diagnostic script has been deprecated."
 
 docker rm -f debug-cg-host 2>/dev/null || true
 

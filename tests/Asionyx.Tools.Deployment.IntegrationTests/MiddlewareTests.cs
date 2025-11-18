@@ -10,6 +10,7 @@ namespace Asionyx.Tools.Deployment.IntegrationTests;
 public class MiddlewareTests
 {
     private WebApplicationFactory<Program>? _factory;
+    private string? _testKey;
 
     [SetUp]
     public void Setup()
@@ -18,7 +19,8 @@ public class MiddlewareTests
         System.IO.Directory.CreateDirectory(temp);
         // Write ServiceSettings.release.json with ApiKey so the application uses it for middleware auth
         var release = System.IO.Path.Combine(temp, "ServiceSettings.release.json");
-        System.IO.File.WriteAllText(release, "{ \"ApiKey\": \"testkey\" }");
+    _testKey = Guid.NewGuid().ToString("N");
+    System.IO.File.WriteAllText(release, $"{{ \"ApiKey\": \"{_testKey}\" }}");
         // Ensure a logs folder and a minimal deployment.log exists so the LogsController can return results
         var logsDir = System.IO.Path.Combine(temp, "logs");
         System.IO.Directory.CreateDirectory(logsDir);
@@ -55,7 +57,7 @@ public class MiddlewareTests
     Assert.That(r.StatusCode, Is.EqualTo(System.Net.HttpStatusCode.Unauthorized));
 
         // With API key should succeed
-        client.DefaultRequestHeaders.Add("X-Api-Key", "testkey");
+    client.DefaultRequestHeaders.Add("X-Api-Key", _testKey);
         var r2 = await client.GetAsync("/api/logs");
     Assert.That(r2.StatusCode, Is.EqualTo(System.Net.HttpStatusCode.OK));
     }

@@ -1,6 +1,10 @@
 using System;
 using NUnit.Framework;
 
+// Fail any test in this assembly that runs longer than 5 minutes (300000ms).
+// This prevents hung container tests from blocking CI indefinitely.
+[assembly: Timeout(300000)]
+
 // Global test setup for Testcontainers-based integration tests in this assembly.
 [SetUpFixture]
 public class TestSetup

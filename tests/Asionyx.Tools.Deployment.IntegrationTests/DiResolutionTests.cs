@@ -14,7 +14,8 @@ public class DiResolutionTests
     [Test]
     public void AllControllersAndConstructableTypesResolve()
     {
-        Environment.SetEnvironmentVariable("DEPLOY_API_KEY", "testkey");
+    var testKey = Guid.NewGuid().ToString("N");
+    Environment.SetEnvironmentVariable("DEPLOY_API_KEY", testKey);
 
         using var factory = new WebApplicationFactory<Program>();
         using var client = factory.CreateClient();

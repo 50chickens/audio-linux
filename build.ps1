@@ -71,7 +71,7 @@ Write-Host "Creating zip $zipPath"
 Compress-Archive -Path "$publishDir/*" -DestinationPath $zipPath -Force
 
 # Determine API key and deployment client
-$apiKey = $env:DEPLOY_API_KEY; if (-not $apiKey) { $apiKey = 'changeme' }
+$apiKey = $env:DEPLOY_API_KEY; if (-not $apiKey) { $apiKey = '' }
 $deployUrl = 'http://pistomp:5001'
 $clientProj = Join-Path $scriptDir 'tools\Asionyx.Tools.Deployment.Client\Asionyx.Tools.Deployment.Client.csproj'
 

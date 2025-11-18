@@ -122,7 +122,7 @@ $remoteDeployDir = "/opt/deployment-service"
     }
 
 Write-Host "Waiting for deployment service to become available on http://${RemoteHost}:5001/health"
-$apiKey = $env:DEPLOY_API_KEY; if (-not $apiKey) { $apiKey = 'changeme' }
+$apiKey = $env:DEPLOY_API_KEY; if (-not $apiKey) { $apiKey = '' }
 $health= $null; $tries = 0
 while ($tries -lt 30) {
     if ($DryRun) { Write-Host "DRYRUN: Invoke-RestMethod -Uri http://${RemoteHost}:5001/health -Headers @{ 'X-Api-Key' = '$apiKey' } -Method GET"; break }

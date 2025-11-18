@@ -15,6 +15,7 @@ namespace Asionyx.Tools.Deployment.IntegrationTests;
 public class FilesUploadTests
 {
     private WebApplicationFactory<Program>? _factory;
+    private string? _testKey;
 
     [SetUp]
     public void Setup()
@@ -24,9 +25,10 @@ public class FilesUploadTests
 
         // Create a ServiceSettings.release.json containing the test API key so the app will read it from the content root.
         var release = Path.Combine(temp, "ServiceSettings.release.json");
-        File.WriteAllText(release, "{ \"ApiKey\": \"testkey\" }");
+    _testKey = Guid.NewGuid().ToString("N");
+    File.WriteAllText(release, $"{{ \"ApiKey\": \"{_testKey}\" }}");
 
-        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseContentRoot(temp));
+    _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b.UseContentRoot(temp));
     }
 
     [TearDown]
@@ -43,8 +45,8 @@ public class FilesUploadTests
         Directory.CreateDirectory(temp);
         var bytes = Encoding.UTF8.GetBytes("some content");
 
-        using var client = _factory!.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Api-Key", "testkey");
+    using var client = _factory!.CreateClient();
+    client.DefaultRequestHeaders.Add("X-Api-Key", _testKey);
 
         using var content = new MultipartFormDataContent();
         var targetDir = Path.Combine(temp, "deploy_target");
@@ -77,8 +79,8 @@ public class FilesUploadTests
     [Test]
     public async Task Upload_MissingMetadata_ReturnsBadRequest()
     {
-        using var client = _factory!.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Api-Key", "testkey");
+    using var client = _factory!.CreateClient();
+    client.DefaultRequestHeaders.Add("X-Api-Key", _testKey);
         using var content = new MultipartFormDataContent();
         var bytes = Encoding.UTF8.GetBytes("not a zip");
         content.Add(new ByteArrayContent(bytes), "file", "file.bin");

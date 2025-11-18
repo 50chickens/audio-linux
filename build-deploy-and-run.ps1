@@ -72,81 +72,51 @@ function Test-Preflight {
     try { $dotnet = & dotnet --version 2>&1; if ($LASTEXITCODE -eq 0) { Write-Host " success (version: $dotnet)" } else { Write-Host " failure (dotnet returned: $dotnet)" } }
     catch { Write-Host " failure (dotnet not found: $($_.Exception.Message))" }
 
-    # Build and start the systemd test image/container inside WSL. All WSL interactions are centralized here
-    # so no C# test code or test helpers need to invoke WSL directly.
-    Test-WslPreflight
+    # Build and start the systemd test image/container locally using the current Docker daemon.
+    # This centralizes container lifecycle here so C# tests don't need to manipulate Docker directly.
+    Test-LocalPreflight
 }
 
-function Test-WslPreflight {
-    Write-Log "Pre-flight WSL check: building test image and starting container inside WSL"
+function Test-LocalPreflight {
+    Write-Log "Pre-flight local check: building test image and starting container using local Docker daemon"
 
-    $wslCmd = Get-Command wsl -ErrorAction SilentlyContinue
-    if ($null -eq $wslCmd) { throw "WSL not available on this host; pre-flight requires WSL to build/start the systemd test image." }
-
-    # Find a running WSL distro (prefer non-docker-desktop)
-    $list = wsl -l -v 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "Failed to query WSL distros: $list" }
-
-    $distro = $null
-    $lines = $list -split "\r?\n"
-    foreach ($line in $lines) {
-        $trim = $line.Trim()
-        if ($trim -match "^NAME" -or [string]::IsNullOrWhiteSpace($trim)) { continue }
-        if ($trim -match "Running" -and $trim -notmatch "docker-desktop") {
-            # first token is the distro name
-            $parts = $trim -split '\\s+'
-            $distro = $parts[0]
-            break
-        }
-    }
-
-    if (-not $distro) { throw "No running WSL distro found (exclude docker-desktop). Start a distro or ensure Docker is running in WSL." }
-
-    Write-Log "Using WSL distro: $distro"
-
-    # Convert repository Windows path to WSL path
-    $repoWin = (Resolve-Path ".").Path
-    $wslRepo = wsl -d $distro -- wslpath -a "$repoWin" 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "wslpath failed to convert path: $wslRepo" }
-    $wslRepo = $wslRepo.Trim()
-
-    # Build the image inside WSL
-    Write-Log "Building docker image inside WSL distro $distro"
-    $buildCmd = "docker build -t audio-linux/ci-systemd-trixie:local -f '$wslRepo/build/ci-systemd-trixie.Dockerfile' '$wslRepo'"
-    $buildOut = wsl -d $distro -- bash -lc "$buildCmd" 2>&1
+    # Build the image locally
+    Write-Log "Building docker image locally"
+    $buildCmd = "docker build -t audio-linux/ci-systemd-trixie:local -f 'build/ci-systemd-trixie.Dockerfile' '.'"
+    $buildOut = & bash -c $buildCmd 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host $buildOut
-        throw "Docker build inside WSL failed (distro $distro). See output above."
+        throw "Docker build failed. See output above."
     }
 
     # Ensure any previous test container is removed
     Write-Log "Removing any existing test container 'audio-linux-ci-systemd'"
-    wsl -d $distro -- bash -lc "docker rm -f audio-linux-ci-systemd 2>/dev/null || true" | Out-Null
+    docker rm -f audio-linux-ci-systemd 2>$null || $true | Out-Null
 
     # Start the container in detached mode (entrypoint will start the emulator and the deployment service)
-    Write-Log "Starting test container inside WSL"
+    Write-Log "Starting test container locally"
     $runCmd = "docker rm -f audio-linux-ci-systemd 2>/dev/null || true; docker run --name audio-linux-ci-systemd -d -p 5001:5001 -p 5200:5200 audio-linux/ci-systemd-trixie:local"
-    $runOut = wsl -d $distro -- bash -lc "$runCmd" 2>&1
+    $runOut = & bash -c $runCmd 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Host $runOut
-        throw "Failed to start systemd test container inside WSL (distro $distro)."
+        throw "Failed to start systemd test container locally."
     }
 
     Start-Sleep -Seconds 3
 
-    $inspect = wsl -d $distro -- bash -lc "docker inspect -f '{{.State.Running}} {{.State.ExitCode}}' audio-linux-ci-systemd" 2>&1
-    if ($LASTEXITCODE -ne 0) { Write-Host $inspect; throw "Failed to inspect started test container inside WSL." }
+    $inspect = docker inspect -f '{{.State.Running}} {{.State.ExitCode}}' audio-linux-ci-systemd 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Host $inspect; throw "Failed to inspect started test container." }
 
     $inspect = $inspect.Trim()
     if ($inspect -like 'true*') {
-        Write-Log "Test container is running inside WSL"
+        Write-Log "Test container is running locally"
         return $true
     }
     else {
         Write-Host "Container not running after start: $inspect"
-        $logs = wsl -d $distro -- bash -lc "docker logs --tail 500 audio-linux-ci-systemd" 2>&1
+        $logs = docker logs --tail 500 audio-linux-ci-systemd 2>&1
         Write-Host "--- container logs ---`n$logs`n--- end logs ---"
-        throw "Systemd test container failed to start inside WSL (see logs above)"
+        throw "Systemd test container failed to start (see logs above)"
     }
 }
 

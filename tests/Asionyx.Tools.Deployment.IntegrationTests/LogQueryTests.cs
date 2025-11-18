@@ -12,6 +12,7 @@ namespace Asionyx.Tools.Deployment.IntegrationTests;
 public class LogQueryTests
 {
     private WebApplicationFactory<Program> _factory;
+    private string? _testKey;
 
     [SetUp]
     public void Setup()
@@ -21,7 +22,8 @@ public class LogQueryTests
     Directory.CreateDirectory(temp);
     // Ensure an API key is present for the app by writing ServiceSettings.release.json into the content root
     var release = Path.Combine(temp, "ServiceSettings.release.json");
-    File.WriteAllText(release, "{ \"ApiKey\": \"testkey\" }");
+    _testKey = Guid.NewGuid().ToString("N");
+    File.WriteAllText(release, $"{{ \"ApiKey\": \"{_testKey}\" }}");
         Directory.CreateDirectory(Path.Combine(temp, "logs"));
 
         var logPath = Path.Combine(temp, "logs", "deployment.log");
@@ -45,7 +47,7 @@ public class LogQueryTests
     public async Task Query_FilterByLevel_ShouldReturnErrorOnly()
     {
         using var client = _factory!.CreateClient();
-    client.DefaultRequestHeaders.Add("X-Api-Key", "testkey");
+    client.DefaultRequestHeaders.Add("X-Api-Key", _testKey);
     var all = await client.GetAsync("/api/logs");
     all.EnsureSuccessStatusCode();
     var allArr = JsonSerializer.Deserialize<JsonElement[]>(await all.Content.ReadAsStringAsync());
@@ -64,8 +66,8 @@ public class LogQueryTests
     [Test]
     public async Task Query_OrAndRange_TimestampRangeAndOr()
     {
-        using var client = _factory!.CreateClient();
-        client.DefaultRequestHeaders.Add("X-Api-Key", "testkey");
+    using var client = _factory!.CreateClient();
+    client.DefaultRequestHeaders.Add("X-Api-Key", _testKey);
 
         // Extended query language: we'll test OR by running two queries and combining results
         var r1 = await client.GetAsync("/api/logs?filter=datestamp==2025-11-07 10:00:00.0000");
