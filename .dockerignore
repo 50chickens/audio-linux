@@ -1,7 +1,0 @@
-/.vs
-**/.vs/
-.git\n+.git/**
-bin
-obj
-**/bin
-**/obj
