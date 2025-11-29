@@ -6,9 +6,9 @@ internal static class Program
 {
     private static void Main(string[] args)
     {
-        NewMethod();
+        ListDevices();
     }
-    private static void NewMethod()
+    private static void ListDevices()
     {
         var soundFlowDeviceEnumerator = new SoundFlowDeviceEnumerator();
         var audioDevices = soundFlowDeviceEnumerator.GetAudioDevices();
